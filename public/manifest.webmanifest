@@ -1,12 +1,14 @@
 {
-  "name": "Share to MagicMirror",
-  "short_name": "MagicMirror",
-  "description": "Share YouTube videos to your MagicMirror display",
+  "id": "/",
+  "name": "Share to MagicMirror²",
+  "short_name": "MagicMirror²",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "browser"],
   "background_color": "#0b0b0b",
   "theme_color": "#0b0b0b",
+  "description": "Share YouTube videos to your MagicMirror display",
   "icons": [
     {
       "src": "/icon-192.png",
@@ -30,5 +32,18 @@
       "text": "text",
       "url": "url"
     }
-  }
+  },
+  "shortcuts": [
+    {
+      "name": "Play URL",
+      "short_name": "Play",
+      "url": "/?focus=play"
+    },
+    {
+      "name": "Stop",
+      "short_name": "Stop",
+      "url": "/?action=stop"
+    }
+  ],
+  "categories": ["utilities", "productivity", "video"]
 }

@@ -1041,10 +1041,18 @@ function setupEventListeners () {
  * Initialize Chrome installation banner for non-Chrome browsers
  */
 function initializeChromeBanner() {
-	// Check if we should show the Chrome banner
-	if (shouldShowChromeBanner()) {
-		showChromeBanner();
-	}
+	console.log('[Chrome Banner] Initializing banner...');
+	
+	// Add a small delay to ensure DOM is fully loaded
+	setTimeout(() => {
+		// Check if we should show the Chrome banner
+		if (shouldShowChromeBanner()) {
+			console.log('[Chrome Banner] Should show banner - displaying now');
+			showChromeBanner();
+		} else {
+			console.log('[Chrome Banner] Banner should not be shown');
+		}
+	}, 100);
 }
 
 /**
@@ -1052,14 +1060,20 @@ function initializeChromeBanner() {
  * @returns {boolean} True if banner should be shown
  */
 function shouldShowChromeBanner() {
+	// TEMPORARY: Force show banner for testing
+	// Remove this line once testing is complete
+	// return true;
+	
 	// Don't show if user has dismissed it
 	if (localStorage.getItem('chromeBannerDismissed') === 'true') {
+		console.log('[Chrome Banner] Banner was previously dismissed');
 		return false;
 	}
 
 	// Don't show if already in standalone mode (PWA installed)
 	if (window.matchMedia('(display-mode: standalone)').matches || 
 		window.navigator.standalone === true) {
+		console.log('[Chrome Banner] App is in standalone mode');
 		return false;
 	}
 
@@ -1099,6 +1113,12 @@ function shouldShowChromeBanner() {
 		isDuckDuckGo,
 		isFirefox,
 		isSafari,
+		isSamsung,
+		isOpera,
+		isHuawei,
+		isUCBrowser,
+		isVivaldi,
+		isBrave,
 		shouldShow
 	});
 	

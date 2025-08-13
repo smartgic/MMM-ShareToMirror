@@ -1594,6 +1594,11 @@ body.chrome-banner-visible {
 	padding-top: calc(24px + 68px); /* Original padding + banner height */
 }
 
+/* Offset toast when banner is visible (desktop) */
+body.chrome-banner-visible .toast {
+	top: calc(24px + 68px);
+}
+
 /* Tablet adjustments */
 @media (max-width: 768px) {
 	.chrome-banner {
@@ -1617,6 +1622,10 @@ body.chrome-banner-visible {
 	
 	body.chrome-banner-visible {
 		padding-top: calc(16px + 60px);
+	}
+	
+	body.chrome-banner-visible .toast {
+		top: calc(16px + 60px);
 	}
 }
 
@@ -1699,6 +1708,10 @@ body.chrome-banner-visible {
 	body.chrome-banner-visible {
 		padding-top: calc(12px + 48px);
 	}
+	
+	body.chrome-banner-visible .toast {
+		top: calc(12px + 48px);
+	}
 }
 
 /* Landscape mobile adjustments */
@@ -1739,6 +1752,10 @@ body.chrome-banner-visible {
 	
 	body.chrome-banner-visible {
 		padding-top: calc(12px + 44px);
+	}
+	
+	body.chrome-banner-visible .toast {
+		top: calc(12px + 44px);
 	}
 }
 

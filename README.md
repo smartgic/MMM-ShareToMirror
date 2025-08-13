@@ -27,7 +27,9 @@ Send YouTube videos from your phone straight to **MagicMirror²** with a tap. Sh
 - **Captions** - On/off toggle with multi-language support (9 languages)
 - **Quality control** - Auto to 4K (2160p) with optional quality locking
 - **Video controls** - Rewind, pause/resume, and forward buttons in PWA
-- **Keyboard shortcuts** - Press `Esc` to stop playback
+- **Skip intervals** - Customizable skip forward/backward intervals (5s, 10s, 15s, 30s)
+- **Video information** - Rich metadata display with thumbnails, duration, and stats
+- **Keyboard shortcuts** - Press `Esc` to stop playbook
 - **API endpoints** - Full REST API for automation and integration
 
 ### 🔒 **Security & Performance**

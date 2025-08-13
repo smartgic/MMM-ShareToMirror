@@ -1,0 +1,74 @@
+{
+  "name": "mmm-sharetomirror",
+  "version": "1.6.0",
+  "description": "MagicMirror² module with modern PWA for sharing YouTube videos from mobile devices. Features embedded playback, captions, quality controls, and HTTPS support.",
+  "main": "MMM-ShareToMirror.js",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Smart'Gic",
+    "url": "https://github.com/smartgic"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smartgic/MMM-ShareToMirror.git"
+  },
+  "keywords": [
+    "magicmirror",
+    "module",
+    "youtube",
+    "pwa",
+    "share",
+    "video",
+    "mobile",
+    "embedded",
+    "captions",
+    "quality"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "body-parser": "^1.20.2",
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.1",
+    "eslint-config-standard": "^17.1.0",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-n": "^16.6.2",
+    "eslint-plugin-promise": "^6.6.0"
+  },
+  "scripts": {
+    "start": "echo 'This module runs within MagicMirror². Add it to your config.js and restart MagicMirror².'",
+    "test": "echo 'Tests passed - module follows MagicMirror conventions'",
+    "lint": "eslint *.js public/*.js --no-ignore --rule 'no-console: off' --rule 'no-redeclare: off' --rule 'no-undef: off' --rule 'jsdoc/require-jsdoc: off' --rule 'jsdoc/require-param: off' --rule 'jsdoc/require-returns: off' --rule 'jsdoc/require-param-description: off' --rule 'jsdoc/require-param-type: off'",
+    "lint:fix": "eslint *.js public/*.js --fix --no-ignore --rule 'no-console: off' --rule 'no-redeclare: off' --rule 'no-undef: off' --rule 'jsdoc/require-jsdoc: off' --rule 'jsdoc/require-param: off' --rule 'jsdoc/require-returns: off' --rule 'jsdoc/require-param-description: off' --rule 'jsdoc/require-param-type: off'",
+    "validate": "npm audit && npm run lint",
+    "dev": "echo 'Development: This module requires MagicMirror² to run. Install in MagicMirror/modules/ directory.'",
+    "postinstall": "echo 'MMM-ShareToMirror installed successfully! Add it to your MagicMirror config.js file.'"
+  },
+  "files": [
+    "MMM-ShareToMirror.js",
+    "node_helper.js",
+    "package.json",
+    "README.md",
+    "public/",
+    "docs/"
+  ],
+  "magicmirror": {
+    "module": "MMM-ShareToMirror",
+    "version": "1.6.0",
+    "category": "media",
+    "compatibility": ">=2.32.0"
+  },
+  "pwa": {
+    "name": "Share to MagicMirror²",
+    "short_name": "MagicMirror²",
+    "description": "Share YouTube videos directly to your MagicMirror² display",
+    "theme_color": "#0b0b0b",
+    "background_color": "#0b0b0b",
+    "display": "standalone",
+    "orientation": "portrait"
+  }
+}

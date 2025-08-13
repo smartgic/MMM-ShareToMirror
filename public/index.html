@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+	<title>Share to MagicMirror²</title>
+	<meta name="description" content="Share YouTube videos directly to your MagicMirror² display">
+	<link rel="manifest" href="/manifest.webmanifest">
+	<link rel="icon" type="image/png" href="/favicon.png">
+	<meta name="theme-color" content="#0b0b0b">
+	<meta name="apple-mobile-web-app-capable" content="yes">
+	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+	<meta name="apple-mobile-web-app-title" content="Share to MagicMirror²">
+	<link rel="apple-touch-icon" href="/icon-192.png">
+	<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+	<main class="card" role="main">
+		<header class="header">
+			<div class="header-top">
+				<h1>
+					<img src="/icon-64.png" alt="" role="presentation">
+					Share to MagicMirror²
+				</h1>
+				<div class="theme-toggle" role="switch" aria-checked="false" aria-label="Toggle dark/light theme" tabindex="0">
+					<div class="theme-toggle-track">
+						<div class="theme-toggle-thumb">
+							<svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<circle cx="12" cy="12" r="5"/>
+								<path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+							</svg>
+							<svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+							</svg>
+						</div>
+					</div>
+				</div>
+			</div>
+			<p class="subtitle">Share YouTube videos directly to your MagicMirror² display. Install this app to add it to your device's share menu.</p>
+		</header>
+
+		<section class="form-section" aria-labelledby="playback-heading">
+			<h2 id="playback-heading" class="sr-only">Video Playback Controls</h2>
+			
+			<div class="form-row">
+				<div class="input-group">
+					<label for="url">YouTube URL or Video ID</label>
+					<input 
+						id="url" 
+						type="url" 
+						placeholder="https://www.youtube.com/watch?v=..." 
+						aria-describedby="url-help"
+						autocomplete="url"
+					/>
+					<div id="url-help" class="sr-only">Enter a YouTube URL or video ID to play on your MagicMirror</div>
+				</div>
+			</div>
+
+			<div class="button-group">
+				<button id="play" class="button-primary" type="button">
+					<span class="button-text">Play</span>
+				</button>
+				<button id="stop" class="button-danger" type="button">
+					<span class="button-text">Stop</span>
+				</button>
+				<button id="install" type="button" disabled>
+					<span class="button-text">Install App</span>
+				</button>
+			</div>
+		</section>
+
+		<section class="form-section" aria-labelledby="options-heading">
+			<h2 id="options-heading" class="sr-only">Playback Options</h2>
+			
+			<div class="options-grid">
+				<div class="option-group">
+					<label for="captionEnabled">Captions</label>
+					<select id="captionEnabled" aria-describedby="caption-help">
+						<option value="off">Off</option>
+						<option value="on">On</option>
+					</select>
+					<div id="caption-help" class="sr-only">Enable or disable video captions</div>
+				</div>
+
+				<div class="option-group">
+					<label for="captionLang">Caption Language</label>
+					<select id="captionLang" aria-describedby="lang-help">
+						<option value="en">English</option>
+						<option value="fr">Français</option>
+						<option value="es">Español</option>
+						<option value="de">Deutsch</option>
+						<option value="it">Italiano</option>
+						<option value="pt">Português</option>
+						<option value="ja">日本語</option>
+						<option value="ko">한국어</option>
+						<option value="zh">中文</option>
+					</select>
+					<div id="lang-help" class="sr-only">Select the language for video captions</div>
+				</div>
+
+				<div class="option-group">
+					<label for="qualityTarget">Video Quality</label>
+					<select id="qualityTarget" aria-describedby="quality-help">
+						<option value="auto">Auto</option>
+						<option value="144p">144p</option>
+						<option value="240p">240p</option>
+						<option value="360p">360p</option>
+						<option value="480p">480p</option>
+						<option value="720p">720p</option>
+						<option value="1080p">1080p</option>
+						<option value="1440p">1440p</option>
+						<option value="2160p">2160p (4K)</option>
+					</select>
+					<div id="quality-help" class="sr-only">Select the video quality for playback</div>
+				</div>
+
+				<div class="option-group">
+					<label for="qualityLock">Lock Quality</label>
+					<select id="qualityLock" aria-describedby="lock-help">
+						<option value="off">No</option>
+						<option value="on">Yes</option>
+					</select>
+					<div id="lock-help" class="sr-only">Prevent automatic quality changes during playback</div>
+				</div>
+			</div>
+		</section>
+
+		<div class="status-indicator">
+			<div class="status-dot" id="statusDot" aria-hidden="true"></div>
+			<span id="statusText">Checking connection...</span>
+		</div>
+
+		<div class="separator" role="separator"></div>
+
+		<footer class="api-info">
+			<strong>API Endpoints:</strong><br>
+			<code>POST /api/play</code> - Play video<br>
+			<code>POST /api/stop</code> - Stop playback<br>
+			<code>POST /api/options</code> - Update settings<br>
+			<code>GET /api/status</code> - Get current status
+		</footer>
+	</main>
+
+	<div id="toast" class="toast" role="alert" aria-live="polite"></div>
+
+	<script src="/app.js"></script>
+</body>
+</html>

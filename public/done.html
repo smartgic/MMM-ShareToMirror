@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta name="theme-color" content="#0b0b0b">
+	<title>Sent to MagicMirror²</title>
+	<style>
+		* {
+			box-sizing: border-box;
+		}
+
+		html, body {
+			margin: 0;
+			padding: 0;
+			height: 100%;
+			overflow: hidden;
+		}
+
+		body {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			background: #0b0b0b;
+			color: #eee;
+			font-family: system-ui, 'Segoe UI', Roboto, Ubuntu, Cantarell, 'Noto Sans', sans-serif;
+			font-size: 16px;
+			line-height: 1.5;
+		}
+
+		.message-card {
+			background: #141414;
+			border: 1px solid #2a2a2a;
+			border-radius: 14px;
+			padding: 20px 24px;
+			box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+			text-align: center;
+			max-width: 90vw;
+			animation: fadeIn 0.3s ease-out;
+		}
+
+		.icon {
+			font-size: 24px;
+			margin-right: 8px;
+			vertical-align: middle;
+		}
+
+		.message {
+			font-weight: 500;
+			font-size: 18px;
+			vertical-align: middle;
+		}
+
+		@keyframes fadeIn {
+			from {
+				opacity: 0;
+				transform: translateY(10px);
+			}
+			to {
+				opacity: 1;
+				transform: translateY(0);
+			}
+		}
+
+		@media (prefers-reduced-motion: reduce) {
+			.message-card {
+				animation: none;
+			}
+		}
+
+		/* High contrast mode support */
+		@media (prefers-contrast: high) {
+			.message-card {
+				border-color: #fff;
+				background: #000;
+			}
+		}
+	</style>
+</head>
+<body>
+	<div class="message-card" role="status" aria-live="polite">
+		<span class="icon" aria-hidden="true">📤</span>
+		<span class="message">Sent to MagicMirror² — closing…</span>
+	</div>
+
+	<script>
+		// Auto-close functionality with fallbacks
+		(function() {
+			'use strict';
+			
+			const CLOSE_DELAY = 800; // Faster closing
+			let attempts = 0;
+			const MAX_ATTEMPTS = 5;
+			
+			function attemptClose() {
+				attempts++;
+				console.log(`Close attempt ${attempts}`);
+				
+				try {
+					// Strategy 1: Direct window close
+					window.close();
+					return true;
+				} catch (error) {
+					console.log('Direct close failed:', error.message);
+				}
+				
+				try {
+					// Strategy 2: Self close
+					self.close();
+					return true;
+				} catch (error) {
+					console.log('Self close failed:', error.message);
+				}
+				
+				try {
+					// Strategy 3: Parent window close
+					if (window.parent && window.parent !== window) {
+						window.parent.close();
+						return true;
+					}
+				} catch (error) {
+					console.log('Parent close failed:', error.message);
+				}
+				
+				return false;
+			}
+			
+			function fallbackNavigation() {
+				try {
+					// Try to go back in history
+					if (window.history.length > 1) {
+						window.history.back();
+						return true;
+					}
+				} catch (error) {
+					console.log('History back failed:', error.message);
+				}
+				
+				// Final fallback: redirect to home
+				setTimeout(function() {
+					window.location.replace('/');
+				}, 300);
+				return false;
+			}
+			
+			function tryCloseSequence() {
+				const closed = attemptClose();
+				
+				if (!closed && attempts < MAX_ATTEMPTS) {
+					// Try again after a short delay
+					setTimeout(tryCloseSequence, 200);
+				} else if (!closed) {
+					// All close attempts failed, try navigation fallback
+					fallbackNavigation();
+				}
+			}
+			
+			// Start close sequence immediately
+			setTimeout(tryCloseSequence, CLOSE_DELAY);
+			
+			// Also try to close when page becomes visible
+			if (typeof document.addEventListener === 'function') {
+				document.addEventListener('visibilitychange', function() {
+					if (document.visibilityState === 'visible' && attempts < MAX_ATTEMPTS) {
+						setTimeout(tryCloseSequence, 100);
+					}
+				});
+			}
+			
+			// Try to close on any user interaction
+			document.addEventListener('click', function() {
+				if (attempts < MAX_ATTEMPTS) {
+					tryCloseSequence();
+				}
+			});
+			
+			// Also try on focus
+			window.addEventListener('focus', function() {
+				if (attempts < MAX_ATTEMPTS) {
+					setTimeout(tryCloseSequence, 100);
+				}
+			});
+		})();
+	</script>
+</body>
+</html>

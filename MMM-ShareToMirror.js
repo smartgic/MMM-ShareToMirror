@@ -265,6 +265,49 @@ Module.register("MMM-ShareToMirror", {
 			case "STM_OPTIONS":
 				this.updateOptions(payload);
 				break;
+			case "STM_VIDEO_CONTROL":
+				this.handleVideoControl(payload);
+				break;
+		}
+	},
+
+	handleVideoControl (payload) {
+		if (!this.ytPlayer || !payload?.action) return;
+
+		const { action, seconds } = payload;
+
+		try {
+			switch (action) {
+				case "pause":
+					if (this.ytPlayer.pauseVideo) {
+						this.ytPlayer.pauseVideo();
+					}
+					break;
+				case "resume":
+					if (this.ytPlayer.playVideo) {
+						this.ytPlayer.playVideo();
+					}
+					break;
+				case "rewind":
+					if (this.ytPlayer.getCurrentTime && this.ytPlayer.seekTo) {
+						const currentTime = this.ytPlayer.getCurrentTime();
+						const newTime = Math.max(0, currentTime - (seconds || 10));
+						this.ytPlayer.seekTo(newTime, true);
+					}
+					break;
+				case "forward":
+					if (this.ytPlayer.getCurrentTime && this.ytPlayer.seekTo && this.ytPlayer.getDuration) {
+						const currentTime = this.ytPlayer.getCurrentTime();
+						const duration = this.ytPlayer.getDuration();
+						const newTime = Math.min(duration, currentTime + (seconds || 10));
+						this.ytPlayer.seekTo(newTime, true);
+					}
+					break;
+				default:
+					Log.warn(`${this.name}: Unknown video control action: ${action}`);
+			}
+		} catch (error) {
+			Log.error(`${this.name}: Video control error:`, error);
 		}
 	},
 

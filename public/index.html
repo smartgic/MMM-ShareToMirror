@@ -3,8 +3,8 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-	<title>Share to MagicMirror²</title>
-	<meta name="description" content="Share YouTube videos directly to your MagicMirror² display">
+	<title>Share to MagicMirror</title>
+	<meta name="description" content="Share YouTube videos to your MagicMirror display">
 	<link rel="manifest" href="/manifest.webmanifest">
 	<link rel="icon" type="image/png" href="/favicon.png">
 	<meta name="theme-color" content="#0b0b0b">
@@ -12,9 +12,57 @@
 	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 	<meta name="apple-mobile-web-app-title" content="Share to MagicMirror²">
 	<link rel="apple-touch-icon" href="/icon-192.png">
+	<link rel="apple-touch-icon" sizes="180x180" href="/icon-192.png">
+	<link rel="apple-touch-startup-image" href="/icon-512.png">
+	
+	<!-- Additional PWA meta tags for better compatibility -->
+	<meta name="mobile-web-app-capable" content="yes">
+	<meta name="application-name" content="Share to MagicMirror²">
+	<meta name="msapplication-TileColor" content="#0b0b0b">
+	<meta name="msapplication-TileImage" content="/icon-192.png">
+	<meta name="msapplication-config" content="/browserconfig.xml">
+	
+	<!-- Share target hints -->
+	<meta name="web-share-target" content="true">
+	<meta name="share-target-action" content="/share-target">
+	
+	<!-- Open Graph for better sharing -->
+	<meta property="og:title" content="Share to MagicMirror²">
+	<meta property="og:description" content="Share YouTube videos directly to your MagicMirror² display">
+	<meta property="og:image" content="/icon-512.png">
+	<meta property="og:url" content="/">
+	<meta property="og:type" content="website">
+	<meta property="og:site_name" content="Share to MagicMirror²">
+	
+	<!-- Twitter Card -->
+	<meta name="twitter:card" content="summary">
+	<meta name="twitter:title" content="Share to MagicMirror²">
+	<meta name="twitter:description" content="Share YouTube videos directly to your MagicMirror² display">
+	<meta name="twitter:image" content="/icon-512.png">
 	<link rel="stylesheet" href="/styles.css">
 </head>
 <body>
+	<div id="chromeBanner" class="chrome-banner" style="display: none;">
+		<div class="chrome-banner-content">
+			<div class="chrome-banner-icon">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<circle cx="12" cy="12" r="10"/>
+					<path d="M12 6v6l4 2"/>
+				</svg>
+			</div>
+			<div class="chrome-banner-text">
+				<strong>Share Integration Unavailable</strong>
+				<p>To enable sharing from YouTube and other apps, please reinstall this PWA using Chrome browser.</p>
+			</div>
+			<button id="chromeBannerClose" class="chrome-banner-close" aria-label="Close banner">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<line x1="18" y1="6" x2="6" y2="18"/>
+					<line x1="6" y1="6" x2="18" y2="18"/>
+				</svg>
+			</button>
+		</div>
+	</div>
+
 	<main class="card" role="main">
 		<header class="header">
 			<div class="header-top">
@@ -66,6 +114,86 @@
 				<button id="install" type="button" disabled>
 					<span class="button-text">Install App</span>
 				</button>
+			</div>
+
+			<div class="video-info" id="videoInfo" style="display: none;">
+				<h3>Now Playing</h3>
+				<div class="video-details">
+					<div class="video-thumbnail">
+						<img id="videoThumbnail" src="" alt="Video thumbnail" />
+						<div class="video-duration" id="videoDuration"></div>
+					</div>
+					<div class="video-metadata">
+						<h4 id="videoTitle">Loading video information...</h4>
+						<p id="videoChannel">YouTube</p>
+						<div class="video-stats">
+							<span id="videoViews"></span>
+							<span id="videoPublished"></span>
+							<span id="videoLikes"></span>
+							<span id="videoCategory"></span>
+						</div>
+						<div class="video-url" id="videoUrl"></div>
+						<div class="video-description" id="videoDescription"></div>
+						<div class="video-tags" id="videoTags"></div>
+						<div class="video-extra-info">
+							<div class="video-quality" id="videoQuality"></div>
+							<div class="video-language" id="videoLanguage"></div>
+							<div class="video-captions" id="videoCaptions"></div>
+						</div>
+					</div>
+				</div>
+				<div class="video-progress" id="videoProgress" style="display: none;">
+					<div class="progress-info">
+						<span id="currentTime">0:00</span>
+						<span id="totalTime">0:00</span>
+					</div>
+					<div class="progress-bar">
+						<div class="progress-fill" id="progressFill"></div>
+					</div>
+				</div>
+			</div>
+
+			<div class="video-controls" id="videoControls" style="display: none;">
+				<h3>Video Controls</h3>
+				<div class="skip-interval-controls">
+					<label for="skipInterval">Skip Interval</label>
+					<select id="skipInterval" aria-describedby="skip-help">
+						<option value="5">5 seconds</option>
+						<option value="10" selected>10 seconds</option>
+						<option value="15">15 seconds</option>
+						<option value="30">30 seconds</option>
+						<option value="60">1 minute</option>
+						<option value="120">2 minutes</option>
+						<option value="300">5 minutes</option>
+					</select>
+					<div id="skip-help" class="sr-only">Select the number of seconds to skip when using rewind/forward buttons</div>
+				</div>
+				<div class="control-buttons">
+					<button id="rewind" class="button-control" type="button" title="Rewind">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<path d="M11 19l-7-7 7-7"/>
+							<path d="M21 12H3"/>
+						</svg>
+						<span class="button-text" id="rewindText">-10s</span>
+					</button>
+					<button id="pause" class="button-control" type="button" title="Pause/Resume">
+						<svg class="pause-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<rect x="6" y="4" width="4" height="16"/>
+							<rect x="14" y="4" width="4" height="16"/>
+						</svg>
+						<svg class="play-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: none;">
+							<polygon points="5,3 19,12 5,21"/>
+						</svg>
+						<span class="button-text">Pause</span>
+					</button>
+					<button id="forward" class="button-control" type="button" title="Forward">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<path d="M3 12h18"/>
+							<path d="M13 5l7 7-7 7"/>
+						</svg>
+						<span class="button-text" id="forwardText">+10s</span>
+					</button>
+				</div>
 			</div>
 		</section>
 
@@ -125,10 +253,22 @@
 			</div>
 		</section>
 
-		<div class="status-indicator">
-			<div class="status-dot" id="statusDot" aria-hidden="true"></div>
-			<span id="statusText">Checking connection...</span>
-		</div>
+		<section class="status-section">
+			<div class="status-indicator">
+				<div class="status-info">
+					<div class="status-dot" id="statusDot" aria-hidden="true"></div>
+					<span id="statusText">Checking connection...</span>
+				</div>
+				<button id="refreshStatus" type="button" class="refresh-button" title="Check for playing video">
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+						<path d="M21 3v5h-5"/>
+						<path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+						<path d="M3 21v-5h5"/>
+					</svg>
+				</button>
+			</div>
+		</section>
 
 		<div class="separator" role="separator"></div>
 

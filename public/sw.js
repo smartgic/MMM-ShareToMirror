@@ -1,16 +1,24 @@
 /**
  * Service Worker for MMM-ShareToMirror PWA
- * Provides caching and offline functionality
+ * Provides caching, offline functionality, and share target handling
  */
 
-const CACHE_NAME = "stm-v1.6.0";
+const CACHE_NAME = "stm-v1.6.5";
 const STATIC_CACHE = [
 	"/",
 	"/index.html",
 	"/app.js",
+	"/styles.css",
 	"/manifest.webmanifest",
+	"/browserconfig.xml",
 	"/favicon.png",
+	"/icon-32.png",
+	"/icon-48.png",
+	"/icon-64.png",
+	"/icon-128.png",
 	"/icon-192.png",
+	"/icon-256.png",
+	"/icon-384.png",
 	"/icon-512.png",
 	"/done.html"
 ];

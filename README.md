@@ -26,6 +26,7 @@ Send YouTube videos from your phone straight to **MagicMirror²** with a tap. Sh
 ### 🎛️ **Advanced Controls**
 - **Captions** - On/off toggle with multi-language support (9 languages)
 - **Quality control** - Auto to 4K (2160p) with optional quality locking
+- **Video controls** - Rewind, pause/resume, and forward buttons in PWA
 - **Keyboard shortcuts** - Press `Esc` to stop playback
 - **API endpoints** - Full REST API for automation and integration
 
@@ -181,6 +182,42 @@ POST /api/stop
 {
   "ok": true,
   "message": "Playback stopped"
+}
+```
+
+#### **Video Controls**
+```bash
+POST /api/control
+Content-Type: application/json
+
+{
+  "action": "pause"
+}
+```
+
+**Actions:**
+- `pause` - Pause current video
+- `resume` - Resume paused video
+- `rewind` - Rewind video by specified seconds (default: 10)
+- `forward` - Forward video by specified seconds (default: 10)
+
+**For rewind/forward:**
+```bash
+POST /api/control
+Content-Type: application/json
+
+{
+  "action": "rewind",
+  "seconds": 10
+}
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "action": "pause",
+  "seconds": null
 }
 ```
 

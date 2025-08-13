@@ -242,9 +242,10 @@ module.exports = NodeHelper.create({
 	setupRoutes (app) {
 		const upload = multer({ limits: { fileSize: 1024 * 1024, fields: 10 } });
 
-		// Share target
-		app.post("/share-target", upload.none(), (req, res) => {
-			const url = req.body?.url || req.body?.text || req.body?.title;
+		// Share target - support both GET and POST
+		const handleShareTarget = (req, res) => {
+			const url = req.body?.url || req.body?.text || req.body?.title || 
+			           req.query?.url || req.query?.text || req.query?.title;
 			const videoId = parseYouTubeId(url);
 
 			if (videoId) {
@@ -252,9 +253,12 @@ module.exports = NodeHelper.create({
 			}
 
 			res.sendFile(path.join(__dirname, "public", "done.html"));
-		});
+		};
 
-		// API endpoints
+		app.post("/share-target", upload.none(), handleShareTarget);
+		app.get("/share-target", handleShareTarget);
+
+		// API endpoints - using simple paths only
 		app.post("/api/play", (req, res) => {
 			const videoId = parseYouTubeId(req.body?.url);
 
@@ -270,6 +274,27 @@ module.exports = NodeHelper.create({
 			this.state.playing = false;
 			this.sendSocketNotification("STM_STOP_EMBED", { reason: "api" });
 			res.json({ ok: true, message: "Playback stopped" });
+		});
+
+		app.post("/api/control", (req, res) => {
+			const { action, seconds } = req.body;
+
+			if (!action) {
+				return res.status(400).json({ ok: false, error: "Action is required" });
+			}
+
+			const validActions = ["pause", "resume", "rewind", "forward"];
+			if (!validActions.includes(action)) {
+				return res.status(400).json({ ok: false, error: "Invalid action" });
+			}
+
+			// For rewind/forward, validate seconds parameter
+			if ((action === "rewind" || action === "forward") && (!seconds || seconds <= 0)) {
+				return res.status(400).json({ ok: false, error: "Valid seconds parameter required for rewind/forward" });
+			}
+
+			this.sendSocketNotification("STM_VIDEO_CONTROL", { action, seconds });
+			res.json({ ok: true, action, seconds: seconds || null });
 		});
 
 		app.post("/api/options", (req, res) => {
@@ -312,6 +337,42 @@ module.exports = NodeHelper.create({
 			});
 		});
 
+		app.post("/api/video-info", async (req, res) => {
+			const { videoId } = req.body;
+
+			// Validate video ID format
+			if (!videoId || !(/^[a-zA-Z0-9_-]{11}$/).test(videoId)) {
+				return res.status(400).json({ ok: false, error: "Invalid video ID format" });
+			}
+
+			try {
+				const videoInfo = await this.fetchYouTubeVideoInfo(videoId);
+				res.json({ ok: true, data: videoInfo });
+			} catch (error) {
+				console.error("[MMM-ShareToMirror] Failed to fetch video info:", error);
+				res.status(500).json({
+					ok: false,
+					error: "Failed to fetch video information",
+					fallback: {
+						title: "YouTube Video",
+						channel: "YouTube",
+						thumbnail: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+						url: `https://www.youtube.com/watch?v=${videoId}`,
+						description: "Video information could not be loaded",
+						duration: null,
+						views: null,
+						publishedAt: null,
+						likes: null,
+						category: null,
+						tags: [],
+						quality: "Auto",
+						language: "en",
+						captions: []
+					}
+				});
+			}
+		});
+
 		app.get("/api/health", (req, res) => {
 			res.json({
 				ok: true,
@@ -320,8 +381,364 @@ module.exports = NodeHelper.create({
 				timestamp: new Date().toISOString()
 			});
 		});
+	},
 
-		app.options("/api/*", (req, res) => res.sendStatus(200));
+	/**
+	 * Fetch YouTube video information using multiple methods
+	 * @param {string} videoId - YouTube video ID
+	 * @returns {Promise<object>} Video information object
+	 */
+	async fetchYouTubeVideoInfo (videoId) {
+		// Try multiple methods to get video info
+		const methods = [
+			() => this.fetchVideoInfoFromOEmbed(videoId),
+			() => this.fetchVideoInfoFromYouTubeAPI(videoId),
+			() => this.fetchVideoInfoFromScraping(videoId)
+		];
+
+		for (const method of methods) {
+			try {
+				const result = await method();
+				if (result && result.title) {
+					return result;
+				}
+			} catch (error) {
+				console.warn("[MMM-ShareToMirror] Video info method failed:", error.message);
+			}
+		}
+
+		// Final fallback
+		return this.createFallbackVideoInfo(videoId);
+	},
+
+	/**
+	 * Fetch video info using YouTube oEmbed API (most reliable)
+	 * @param {string} videoId - YouTube video ID
+	 */
+	async fetchVideoInfoFromOEmbed (videoId) {
+		const url = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
+
+		return new Promise((resolve, reject) => {
+			const request = https.get(url, { 
+				timeout: 3000,
+				headers: {
+					"User-Agent": "Mozilla/5.0 (compatible; MMM-ShareToMirror/1.6.0)"
+				}
+			}, (response) => {
+				let data = "";
+
+				// Handle non-200 status codes
+				if (response.statusCode !== 200) {
+					reject(new Error(`oEmbed API returned status ${response.statusCode}`));
+					return;
+				}
+
+				response.on("data", (chunk) => {
+					data += chunk;
+				});
+
+				response.on("end", () => {
+					try {
+						const oembedData = JSON.parse(data);
+
+						if (oembedData.title) {
+							resolve({
+								title: oembedData.title,
+								channel: oembedData.author_name || "YouTube",
+								thumbnail: oembedData.thumbnail_url || `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+								url: `https://www.youtube.com/watch?v=${videoId}`,
+								description: `Video by ${oembedData.author_name || "YouTube"}`,
+								duration: null, // oEmbed doesn't provide duration
+								views: null,
+								likes: null,
+								publishedAt: null,
+								category: null,
+								tags: [],
+								quality: "Auto",
+								language: "en",
+								captions: []
+							});
+						} else {
+							reject(new Error("No title in oEmbed response"));
+						}
+					} catch (error) {
+						reject(new Error(`Failed to parse oEmbed response: ${error.message}`));
+					}
+				});
+			});
+
+			request.on("error", (error) => {
+				reject(new Error(`oEmbed request failed: ${error.message}`));
+			});
+
+			request.on("timeout", () => {
+				request.destroy();
+				reject(new Error("oEmbed request timeout"));
+			});
+
+			// Set a shorter timeout
+			request.setTimeout(3000, () => {
+				request.destroy();
+				reject(new Error("oEmbed request timeout"));
+			});
+		});
+	},
+
+	/**
+	 * Fetch video info using YouTube Data API v3 (requires API key)
+	 * @param {string} videoId - YouTube video ID
+	 */
+	async fetchVideoInfoFromYouTubeAPI (videoId) {
+		// This would require a YouTube API key from config
+		// For now, we'll skip this method unless API key is configured
+		if (!this.config?.youtubeApiKey) {
+			throw new Error("YouTube API key not configured");
+		}
+
+		const url = `https://www.googleapis.com/youtube/v3/videos?id=${videoId}&key=${this.config.youtubeApiKey}&part=snippet,statistics,contentDetails`;
+
+		return new Promise((resolve, reject) => {
+			const request = https.get(url, { timeout: 5000 }, (response) => {
+				let data = "";
+
+				response.on("data", (chunk) => {
+					data += chunk;
+				});
+
+				response.on("end", () => {
+					try {
+						const apiData = JSON.parse(data);
+
+						if (apiData.items && apiData.items.length > 0) {
+							const video = apiData.items[0];
+							const snippet = video.snippet;
+							const statistics = video.statistics;
+							const contentDetails = video.contentDetails;
+
+							resolve({
+								title: snippet.title,
+								channel: snippet.channelTitle || "YouTube",
+								thumbnail: snippet.thumbnails?.medium?.url || `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+								url: `https://www.youtube.com/watch?v=${videoId}`,
+								description: snippet.description || "",
+								duration: this.parseISO8601Duration(contentDetails.duration),
+								views: parseInt(statistics.viewCount) || null,
+								likes: parseInt(statistics.likeCount) || null,
+								publishedAt: snippet.publishedAt,
+								category: snippet.categoryId,
+								tags: snippet.tags || [],
+								quality: "Auto",
+								language: snippet.defaultLanguage || snippet.defaultAudioLanguage || "en",
+								captions: contentDetails.caption === "true" ? ["en"] : []
+							});
+						} else {
+							reject(new Error("No video data in API response"));
+						}
+					} catch (error) {
+						reject(new Error(`Failed to parse API response: ${error.message}`));
+					}
+				});
+			});
+
+			request.on("error", (error) => {
+				reject(new Error(`API request failed: ${error.message}`));
+			});
+
+			request.on("timeout", () => {
+				request.destroy();
+				reject(new Error("API request timeout"));
+			});
+		});
+	},
+
+	/**
+	 * Fetch video info by scraping YouTube page (fallback method)
+	 * @param {string} videoId - YouTube video ID
+	 */
+	async fetchVideoInfoFromScraping (videoId) {
+		const url = `https://www.youtube.com/watch?v=${videoId}`;
+
+		return new Promise((resolve, reject) => {
+			const request = https.get(url, {
+				timeout: 8000,
+				headers: {
+					"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+					"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+					"Accept-Language": "en-US,en;q=0.5",
+					"Accept-Encoding": "gzip, deflate, br",
+					"DNT": "1",
+					"Connection": "keep-alive",
+					"Upgrade-Insecure-Requests": "1"
+				}
+			}, (response) => {
+				// Handle non-200 status codes
+				if (response.statusCode !== 200) {
+					reject(new Error(`YouTube page returned status ${response.statusCode}`));
+					return;
+				}
+
+				let data = "";
+				const maxSize = 2 * 1024 * 1024; // 2MB limit
+				let receivedSize = 0;
+
+				response.on("data", (chunk) => {
+					receivedSize += chunk.length;
+					if (receivedSize > maxSize) {
+						request.destroy();
+						reject(new Error("Response too large"));
+						return;
+					}
+					data += chunk;
+
+					// Early termination if we find the data we need
+					if (data.includes("var ytInitialPlayerResponse = {") && data.includes("};")) {
+						request.destroy();
+						processData();
+					}
+				});
+
+				response.on("end", () => {
+					processData();
+				});
+
+				function processData() {
+					try {
+						// Extract JSON data from the page
+						const jsonMatch = data.match(/var ytInitialPlayerResponse = ({.+?});/);
+						if (jsonMatch) {
+							const playerData = JSON.parse(jsonMatch[1]);
+							const videoDetails = playerData.videoDetails;
+
+							if (videoDetails) {
+								// Format duration from seconds to readable format
+								const formatDuration = (seconds) => {
+									if (!seconds) return null;
+									const hrs = Math.floor(seconds / 3600);
+									const mins = Math.floor((seconds % 3600) / 60);
+									const secs = seconds % 60;
+									if (hrs > 0) {
+										return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+									}
+									return `${mins}:${secs.toString().padStart(2, '0')}`;
+								};
+
+								// Format view count
+								const formatViews = (views) => {
+									if (!views) return null;
+									const num = parseInt(views);
+									if (num >= 1000000000) return `${(num / 1000000000).toFixed(1)}B views`;
+									if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M views`;
+									if (num >= 1000) return `${(num / 1000).toFixed(1)}K views`;
+									return `${num} views`;
+								};
+
+								resolve({
+									title: videoDetails.title,
+									channel: videoDetails.author || "YouTube",
+									thumbnail: videoDetails.thumbnail?.thumbnails?.[2]?.url || videoDetails.thumbnail?.thumbnails?.[0]?.url || `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+									url: `https://www.youtube.com/watch?v=${videoId}`,
+									description: videoDetails.shortDescription || "",
+									duration: parseInt(videoDetails.lengthSeconds) || null,
+									durationFormatted: formatDuration(parseInt(videoDetails.lengthSeconds)),
+									views: parseInt(videoDetails.viewCount) || null,
+									viewsFormatted: formatViews(videoDetails.viewCount),
+									likes: null, // Not available in player response
+									publishedAt: null, // Not available in player response
+									category: null,
+									tags: videoDetails.keywords || [],
+									quality: "Auto",
+									language: "en",
+									captions: []
+								});
+								return;
+							}
+						}
+
+						// Fallback: try to extract title from page title
+						const titleMatch = data.match(/<title>(.+?) - YouTube<\/title>/);
+						if (titleMatch) {
+							resolve({
+								title: titleMatch[1],
+								channel: "YouTube",
+								thumbnail: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+								url: `https://www.youtube.com/watch?v=${videoId}`,
+								description: "",
+								duration: null,
+								durationFormatted: null,
+								views: null,
+								viewsFormatted: null,
+								likes: null,
+								publishedAt: null,
+								category: null,
+								tags: [],
+								quality: "Auto",
+								language: "en",
+								captions: []
+							});
+						} else {
+							reject(new Error("Could not extract video information from page"));
+						}
+					} catch (error) {
+						reject(new Error(`Failed to parse scraped data: ${error.message}`));
+					}
+				}
+			});
+
+			request.on("error", (error) => {
+				reject(new Error(`Scraping request failed: ${error.message}`));
+			});
+
+			request.on("timeout", () => {
+				request.destroy();
+				reject(new Error("Scraping request timeout"));
+			});
+
+			// Set timeout
+			request.setTimeout(8000, () => {
+				request.destroy();
+				reject(new Error("Scraping request timeout"));
+			});
+		});
+	},
+
+	/**
+	 * Create fallback video info when all methods fail
+	 * @param {string} videoId - YouTube video ID
+	 */
+	createFallbackVideoInfo (videoId) {
+		return {
+			title: "YouTube Video",
+			channel: "YouTube",
+			thumbnail: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+			url: `https://www.youtube.com/watch?v=${videoId}`,
+			description: "Video information could not be loaded",
+			duration: null,
+			views: null,
+			likes: null,
+			publishedAt: null,
+			category: null,
+			tags: [],
+			quality: "Auto",
+			language: "en",
+			captions: []
+		};
+	},
+
+	/**
+	 * Parse ISO 8601 duration format (PT4M13S) to seconds
+	 * @param {string} duration - ISO 8601 duration string
+	 */
+	parseISO8601Duration (duration) {
+		if (!duration) return null;
+
+		const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+		if (!match) return null;
+
+		const hours = parseInt(match[1]) || 0;
+		const minutes = parseInt(match[2]) || 0;
+		const seconds = parseInt(match[3]) || 0;
+
+		return hours * 3600 + minutes * 60 + seconds;
 	},
 
 	playVideo (videoId, url) {

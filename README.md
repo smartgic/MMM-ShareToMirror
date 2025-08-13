@@ -50,9 +50,9 @@ Send YouTube videos from your phone straight to **MagicMirror²** with a tap. Sh
 
 ## 📸 Screenshots
 
-| PWA Home | MagicMirror Overlay |
-|----------|---------------------|
-| ![PWA Home](docs/pwa-home.png) | ![MagicMirror Overlay](docs/mm-overlay.png) |
+| PWA Home | PWA Video Running | MagicMirror Overlay |
+|----------|-------------------|---------------------|
+| ![PWA Home](docs/pwa-home.png) | ![PWA Video Running](docs/paw-video-running.png) | ![MagicMirror Overlay](docs/mm-overlay.png) |
 
 ---
 

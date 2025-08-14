@@ -28,6 +28,8 @@ Send YouTube videos from your phone straight to **MagicMirror²** with a tap. Sh
 - **Quality control** - Auto to 4K (2160p) with optional quality locking
 - **Video controls** - Rewind, pause/resume, and forward buttons in PWA
 - **Skip intervals** - Customizable skip forward/backward intervals (5s, 10s, 15s, 30s)
+- **Fullscreen overlay** - True fullscreen mode that covers the entire mirror display
+- **Display modes** - Switch between windowed (centered) and fullscreen overlay modes
 - **Video information** - Rich metadata display with thumbnails, duration, and stats
 - **Keyboard shortcuts** - Press `Esc` to stop playbook
 - **API endpoints** - Full REST API for automation and integration
@@ -87,44 +89,121 @@ Add to your `config/config.js`:
 ```javascript
 {
   module: "MMM-ShareToMirror",
-  position: "bottom_center", // Can be any position
+  position: "bottom_center", // Can be any position (or use "fullscreen_above" for overlay-only)
   config: {
-    // Server settings
-    port: 8570,
+    // ===== SERVER SETTINGS =====
+    port: 8570,              // Port for PWA and API (default: 8570)
     https: {
-      enabled: false,        // Set to true for HTTPS
-      keyPath: "",          // Path to SSL private key
-      certPath: ""          // Path to SSL certificate
+      enabled: false,        // Enable HTTPS (required for PWA features)
+      keyPath: "",          // Path to SSL private key file
+      certPath: ""          // Path to SSL certificate file
     },
     
-    // Display settings
-    invisible: true,        // Hide module (recommended)
+    // ===== DISPLAY SETTINGS =====
+    invisible: true,         // Hide module UI (recommended for overlay-only usage)
     
-    // Video overlay settings
+    // ===== VIDEO OVERLAY SETTINGS =====
     overlay: {
-      width: "70vw",
-      maxWidth: "1280px",
-      aspectRatio: "16 / 9",
-      top: "50%",
-      left: "50%",
-      zIndex: 9999,
-      borderRadius: "18px",
-      boxShadow: "0 10px 40px rgba(0,0,0,.55)"
+      // Windowed mode settings (when not fullscreen)
+      width: "70vw",         // Overlay width (viewport width percentage)
+      maxWidth: "1280px",    // Maximum overlay width in pixels
+      aspectRatio: "16 / 9", // Video aspect ratio
+      top: "50%",           // Vertical position (CSS value)
+      left: "50%",          // Horizontal position (CSS value)
+      zIndex: 9999,         // Z-index for overlay stacking
+      borderRadius: "18px",  // Corner radius for windowed mode
+      boxShadow: "0 10px 40px rgba(0,0,0,.55)" // Shadow effect
     },
     
-    // Caption settings
+    // ===== CAPTION SETTINGS =====
     caption: {
-      enabled: false,       // Enable captions by default
-      lang: "en"           // Language: en, fr, es, de, it, pt, ja, ko, zh
+      enabled: false,        // Enable captions by default
+      lang: "en"            // Caption language (en, fr, es, de, it, pt, ja, ko, zh)
     },
     
-    // Quality settings
+    // ===== QUALITY SETTINGS =====
     quality: {
-      target: "auto",       // auto, 144p, 240p, 360p, 480p, 720p, 1080p, 1440p, 2160p
-      floor: null,          // Minimum quality
-      ceiling: null,        // Maximum quality
-      lock: false          // Prevent quality changes during playback
+      target: "auto",        // Preferred quality (auto, 144p, 240p, 360p, 480p, 720p, 1080p, 1440p, 2160p)
+      floor: null,          // Minimum quality (prevents downscaling below this)
+      ceiling: null,        // Maximum quality (prevents upscaling above this)
+      lock: false           // Lock quality (prevent automatic quality changes)
     }
+  }
+}
+```
+
+### **Configuration Options Explained**
+
+#### **Server Settings**
+- **`port`** - TCP port for the web server and API endpoints
+- **`https.enabled`** - Enable HTTPS (strongly recommended for PWA features)
+- **`https.keyPath`** - Full path to SSL private key file (e.g., `/etc/ssl/private/mirror.key`)
+- **`https.certPath`** - Full path to SSL certificate file (e.g., `/etc/ssl/certs/mirror.crt`)
+
+#### **Display Settings**
+- **`invisible`** - Hide the module's DOM element (recommended when using overlay-only)
+- **`position`** - MagicMirror² position (use `"fullscreen_above"` for overlay-only setups)
+
+#### **Overlay Customization**
+- **`overlay.width`** - Windowed mode width (CSS units: `px`, `vw`, `%`)
+- **`overlay.maxWidth`** - Maximum width constraint in pixels
+- **`overlay.aspectRatio`** - Video container aspect ratio (`"16 / 9"`, `"4 / 3"`, etc.)
+- **`overlay.top/left`** - Positioning for windowed mode (CSS positioning values)
+- **`overlay.zIndex`** - Stacking order (higher values appear on top)
+- **`overlay.borderRadius`** - Corner rounding for windowed mode (CSS border-radius)
+- **`overlay.boxShadow`** - Drop shadow effect (CSS box-shadow syntax)
+
+#### **Caption Configuration**
+- **`caption.enabled`** - Default caption state for new videos
+- **`caption.lang`** - Default caption language (ISO 639-1 codes)
+
+#### **Quality Management**
+- **`quality.target`** - Preferred video quality (YouTube quality labels)
+- **`quality.floor`** - Minimum allowed quality (prevents poor quality on slow connections)
+- **`quality.ceiling`** - Maximum allowed quality (saves bandwidth on fast connections)
+- **`quality.lock`** - Prevent YouTube from changing quality automatically
+
+### **Advanced Configuration Examples**
+
+#### **HTTPS with Let's Encrypt**
+```javascript
+config: {
+  port: 8570,
+  https: {
+    enabled: true,
+    keyPath: "/etc/letsencrypt/live/yourdomain.com/privkey.pem",
+    certPath: "/etc/letsencrypt/live/yourdomain.com/fullchain.pem"
+  }
+}
+```
+
+#### **Fullscreen-Only Setup**
+```javascript
+{
+  module: "MMM-ShareToMirror",
+  position: "fullscreen_above",
+  config: {
+    invisible: true,
+    overlay: {
+      width: "100vw",
+      maxWidth: "none",
+      top: "0",
+      left: "0",
+      borderRadius: "0",
+      boxShadow: "none"
+    }
+  }
+}
+```
+
+#### **High-Quality Locked Setup**
+```javascript
+config: {
+  quality: {
+    target: "1080p",
+    floor: "720p",
+    ceiling: "1080p",
+    lock: true
   }
 }
 ```
@@ -143,6 +222,12 @@ Add to your `config/config.js`:
 - **From YouTube app**: Share → **Share to MagicMirror²**
 - **From browser**: Copy URL → Open PWA → Paste → **Play**
 - **Direct API**: Use REST endpoints for automation
+
+### **Display Modes**
+- **Windowed Mode** (default) - Video appears as centered overlay, other modules remain visible
+- **Fullscreen Mode** - Video covers entire mirror display for immersive viewing
+- **Toggle Control** - Switch between modes using PWA buttons or API calls
+- **Auto-exit** - Automatically returns to windowed mode when video stops
 
 ### **Keyboard Controls**
 - **Esc** - Stop current video and close overlay
@@ -261,6 +346,28 @@ GET /api/status
     "httpsEnabled": false
   },
   "timestamp": "2025-01-08T22:19:07.000Z"
+}
+```
+
+#### **Overlay Control**
+```bash
+POST /api/overlay
+Content-Type: application/json
+
+{
+  "action": "fullscreen"
+}
+```
+
+**Actions:**
+- `fullscreen` - Switch to fullscreen mode (covers entire mirror)
+- `windowed` - Switch to windowed mode (centered overlay)
+- `toggle` - Toggle between fullscreen and windowed modes
+
+**Response:**
+```json
+{
+  "ok": true
 }
 ```
 

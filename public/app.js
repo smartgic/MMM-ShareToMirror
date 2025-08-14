@@ -46,7 +46,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		pauseButton: document.getElementById("pause"),
 		forwardButton: document.getElementById("forward"),
 		refreshStatus: document.getElementById("refreshStatus"),
-		skipInterval: document.getElementById("skipInterval"),
+		skipSelect: document.getElementById("skipSelect"),
 		rewindText: document.getElementById("rewindText"),
 		forwardText: document.getElementById("forwardText")
 	});
@@ -62,23 +62,56 @@ document.addEventListener("DOMContentLoaded", () => {
 	setInterval(checkStatus, 5000); // Check every 5 seconds instead of 30
 });
 
+// Safety fallback: if we detect header overlap, nudge once
+window.addEventListener('load', () => {
+	// Use requestAnimationFrame to ensure layout is complete
+	requestAnimationFrame(() => {
+		const hdr = document.querySelector('.appbar');
+		if (!hdr) return;
+		const r = hdr.getBoundingClientRect();
+		if (r.top < 2) {
+			// Use the actual appbar height from CSS custom property
+			const appbarHeight = getComputedStyle(document.documentElement)
+				.getPropertyValue('--appbar-h') || '56px';
+			document.documentElement.style.setProperty('--infobar-h', appbarHeight);
+		}
+	});
+});
+
 // Service Worker registration
 if ("serviceWorker" in navigator) {
 	navigator.serviceWorker.register("/sw.js").catch(console.error);
 }
 
-// PWA install handling - Enhanced for cross-browser compatibility
-window.addEventListener("beforeinstallprompt", (event) => {
-	event.preventDefault();
-	state.deferredPrompt = event;
+// PWA install handling - Enhanced for cross-browser compatibility with safe-area support
+let deferredInstallPrompt = null;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+	// Prevent Chrome from auto-showing the prompt; keep a reference instead
+	e.preventDefault();
+	deferredInstallPrompt = e;
+	state.deferredPrompt = e;
+	// Add a body class and set CSS variable for infobar height
+	document.body.classList.add('has-infobar');
+	// Most Chrome builds use ~56px; tune if your device differs
+	document.documentElement.style.setProperty('--infobar-h', '56px');
+	
+	// Enable install button
 	if (elements.installButton) {
 		elements.installButton.disabled = false;
-		elements.installButton.textContent = "Install App";
+		elements.installButton.querySelector('.button-text').textContent = "Install App";
 	}
 });
 
-window.addEventListener("appinstalled", () => {
+window.addEventListener('appinstalled', () => {
+	deferredInstallPrompt = null;
+	state.deferredPrompt = null;
+	document.body.classList.add('pwa-installed');
+	document.body.classList.remove('has-infobar');
+	document.documentElement.style.setProperty('--infobar-h', '0px');
 	showToast("App installed! You can now share videos directly from YouTube.", "success");
+	
+	// Hide install button
 	if (elements.installButton) elements.installButton.style.display = "none";
 });
 
@@ -640,12 +673,12 @@ function updateVideoProgress (currentTime, duration) {
 }
 
 /**
- * Get the current skip interval from the dropdown
+ * Get the current skip interval from the custom dropdown
  * @returns {number} Skip interval in seconds
  */
 function getSkipInterval () {
-	if (!elements.skipInterval) return 10; // Default fallback
-	return parseInt(elements.skipInterval.value, 10) || 10;
+	if (!elements.skipSelect) return 10; // Default fallback
+	return parseInt(elements.skipSelect.dataset.value, 10) || 10;
 }
 
 /**
@@ -958,11 +991,16 @@ function setupEventListeners () {
 
 					if (outcome === "accepted") {
 						showToast("App installed successfully!", "success");
+						// Update infobar state after successful install
+						document.body.classList.add('pwa-installed');
+						document.body.classList.remove('has-infobar');
+						document.documentElement.style.setProperty('--infobar-h', '0px');
 					} else {
 						showToast("Installation cancelled", "info");
 					}
 
 					state.deferredPrompt = null;
+					deferredInstallPrompt = null;
 					elements.installButton.disabled = true;
 				} catch (error) {
 					console.error("Install failed:", error);
@@ -974,6 +1012,7 @@ function setupEventListeners () {
 			}
 		});
 	}
+
 
 	// Play/Stop buttons
 	if (elements.playButton) {
@@ -1016,10 +1055,8 @@ function setupEventListeners () {
 		});
 	}
 
-	// Skip interval dropdown
-	if (elements.skipInterval) {
-		elements.skipInterval.addEventListener("change", updateSkipButtonText);
-	}
+	// Custom skip interval dropdown
+	initializeCustomDropdown();
 
 	// Options
 	[elements.captionEnabled, elements.captionLang, elements.qualityTarget, elements.qualityLock]
@@ -1041,18 +1078,10 @@ function setupEventListeners () {
  * Initialize Chrome installation banner for non-Chrome browsers
  */
 function initializeChromeBanner() {
-	console.log('[Chrome Banner] Initializing banner...');
-	
-	// Add a small delay to ensure DOM is fully loaded
-	setTimeout(() => {
-		// Check if we should show the Chrome banner
-		if (shouldShowChromeBanner()) {
-			console.log('[Chrome Banner] Should show banner - displaying now');
-			showChromeBanner();
-		} else {
-			console.log('[Chrome Banner] Banner should not be shown');
-		}
-	}, 100);
+	// Check if we should show the Chrome banner
+	if (shouldShowChromeBanner()) {
+		showChromeBanner();
+	}
 }
 
 /**
@@ -1060,69 +1089,22 @@ function initializeChromeBanner() {
  * @returns {boolean} True if banner should be shown
  */
 function shouldShowChromeBanner() {
-	// TEMPORARY: Force show banner for testing
-	// Remove this line once testing is complete
-	// return true;
-	
-	// Don't show if user has dismissed it
-	if (localStorage.getItem('chromeBannerDismissed') === 'true') {
-		console.log('[Chrome Banner] Banner was previously dismissed');
-		return false;
-	}
-
-	// Don't show if already in standalone mode (PWA installed)
-	if (window.matchMedia('(display-mode: standalone)').matches || 
+	// Don't show if user has dismissed it or app is in standalone mode
+	if (localStorage.getItem('chromeBannerDismissed') === 'true' ||
+		window.matchMedia('(display-mode: standalone)').matches || 
 		window.navigator.standalone === true) {
-		console.log('[Chrome Banner] App is in standalone mode');
 		return false;
 	}
 
-	// Enhanced browser detection
+	// Show banner for browsers with poor share target support
 	const userAgent = navigator.userAgent;
 	const vendor = navigator.vendor || '';
 	
-	// Check for Chrome (but not other Chromium-based browsers)
-	const isRealChrome = /Chrome/.test(userAgent) && 
-	                    /Google Inc/.test(vendor) && 
+	const isRealChrome = /Chrome/.test(userAgent) && /Google Inc/.test(vendor) && 
 	                    !/Edg|OPR|DuckDuckGo|Samsung|Huawei/.test(userAgent);
-	
-	// Check for Edge
 	const isEdge = /Edg/.test(userAgent);
 	
-	// Detect other browsers that have poor share target support
-	const isDuckDuckGo = /DuckDuckGo/.test(userAgent) || /ddg_android/.test(userAgent);
-	const isFirefox = /Firefox/.test(userAgent);
-	const isSafari = /Safari/.test(userAgent) && !/Chrome/.test(userAgent);
-	const isSamsung = /SamsungBrowser/.test(userAgent);
-	const isOpera = /OPR/.test(userAgent) || /Opera/.test(userAgent);
-	const isHuawei = /HuaweiBrowser/.test(userAgent);
-	const isUCBrowser = /UCBrowser/.test(userAgent);
-	const isVivaldi = /Vivaldi/.test(userAgent);
-	const isBrave = /Brave/.test(userAgent);
-	
-	// Show banner for browsers with poor share target support
-	const shouldShow = isDuckDuckGo || isFirefox || isSafari || isSamsung || 
-	                   isOpera || isHuawei || isUCBrowser || isVivaldi || isBrave ||
-	                   (!isRealChrome && !isEdge);
-	
-	console.log('[Chrome Banner] Browser detection:', {
-		userAgent: userAgent.substring(0, 100) + '...',
-		vendor,
-		isRealChrome,
-		isEdge,
-		isDuckDuckGo,
-		isFirefox,
-		isSafari,
-		isSamsung,
-		isOpera,
-		isHuawei,
-		isUCBrowser,
-		isVivaldi,
-		isBrave,
-		shouldShow
-	});
-	
-	return shouldShow;
+	return !isRealChrome && !isEdge;
 }
 
 /**
@@ -1132,7 +1114,6 @@ function showChromeBanner() {
 	const banner = document.getElementById('chromeBanner');
 	if (!banner) return;
 
-	// Show the banner
 	banner.style.display = 'block';
 	document.body.classList.add('chrome-banner-visible');
 
@@ -1157,10 +1138,122 @@ function dismissChromeBanner() {
 	const banner = document.getElementById('chromeBanner');
 	if (!banner) return;
 
-	// Hide the banner
 	banner.style.display = 'none';
 	document.body.classList.remove('chrome-banner-visible');
-
-	// Remember that user dismissed it
 	localStorage.setItem('chromeBannerDismissed', 'true');
+}
+
+/**
+ * Initialize custom dropdown functionality
+ */
+function initializeCustomDropdown() {
+	if (!elements.skipSelect) return;
+
+	const root = elements.skipSelect;
+	const btn = root.querySelector('.mm-select__button');
+	const menu = root.querySelector('.mm-select__menu');
+	const label = root.querySelector('#skipLabel');
+
+	if (!btn || !menu || !label) return;
+
+	function open() {
+		root.classList.add('open');
+		btn.setAttribute('aria-expanded', 'true');
+	}
+
+	function close() {
+		root.classList.remove('open');
+		btn.setAttribute('aria-expanded', 'false');
+	}
+
+	// Toggle dropdown on button click
+	btn.addEventListener('click', (e) => {
+		e.stopPropagation();
+		root.classList.contains('open') ? close() : open();
+	});
+
+	// Close dropdown when clicking outside
+	document.addEventListener('click', (e) => {
+		if (!root.contains(e.target)) {
+			close();
+		}
+	});
+
+	// Handle option selection
+	menu.addEventListener('click', (e) => {
+		const li = e.target.closest('li[role="option"]');
+		if (!li) return;
+
+		// Update selection state
+		menu.querySelectorAll('li[aria-selected="true"]').forEach(n => n.removeAttribute('aria-selected'));
+		li.setAttribute('aria-selected', 'true');
+
+		// Update dropdown value and label
+		const seconds = Number(li.dataset.val);
+		root.dataset.value = seconds;
+		label.textContent = li.textContent.trim();
+
+		// Update skip button text
+		updateSkipButtonText();
+
+		// Close dropdown
+		close();
+
+		// Optional: Save preference to localStorage
+		try {
+			localStorage.setItem('skipInterval', seconds.toString());
+		} catch (error) {
+			console.warn('Failed to save skip interval preference:', error);
+		}
+	});
+
+	// Keyboard navigation support
+	btn.addEventListener('keydown', (e) => {
+		if (e.key === 'Enter' || e.key === ' ') {
+			e.preventDefault();
+			root.classList.contains('open') ? close() : open();
+		} else if (e.key === 'Escape') {
+			close();
+		}
+	});
+
+	menu.addEventListener('keydown', (e) => {
+		const options = Array.from(menu.querySelectorAll('li[role="option"]'));
+		const currentIndex = options.findIndex(opt => opt.getAttribute('aria-selected') === 'true');
+
+		if (e.key === 'ArrowDown') {
+			e.preventDefault();
+			const nextIndex = (currentIndex + 1) % options.length;
+			options[nextIndex].click();
+		} else if (e.key === 'ArrowUp') {
+			e.preventDefault();
+			const prevIndex = currentIndex > 0 ? currentIndex - 1 : options.length - 1;
+			options[prevIndex].click();
+		} else if (e.key === 'Enter' || e.key === ' ') {
+			e.preventDefault();
+			const selectedOption = options[currentIndex];
+			if (selectedOption) selectedOption.click();
+		} else if (e.key === 'Escape') {
+			close();
+			btn.focus();
+		}
+	});
+
+	// Load saved preference
+	try {
+		const savedInterval = localStorage.getItem('skipInterval');
+		if (savedInterval) {
+			const seconds = parseInt(savedInterval, 10);
+			const option = menu.querySelector(`li[data-val="${seconds}"]`);
+			if (option) {
+				// Update selection
+				menu.querySelectorAll('li[aria-selected="true"]').forEach(n => n.removeAttribute('aria-selected'));
+				option.setAttribute('aria-selected', 'true');
+				root.dataset.value = seconds;
+				label.textContent = option.textContent.trim();
+			}
+		}
+	} catch (error) {
+		console.warn('Failed to load skip interval preference:', error);
+	}
 }

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 	<meta charset="utf-8">
-	<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 	<title>Share to MagicMirror</title>
 	<meta name="description" content="Share YouTube videos to your MagicMirror display">
 	<link rel="manifest" href="/manifest.webmanifest">
@@ -15,33 +15,39 @@
 	<link rel="apple-touch-icon" sizes="180x180" href="/icon-192.png">
 	<link rel="apple-touch-startup-image" href="/icon-512.png">
 	
-	<!-- Additional PWA meta tags for better compatibility -->
+	<!-- PWA meta tags -->
 	<meta name="mobile-web-app-capable" content="yes">
 	<meta name="application-name" content="Share to MagicMirror²">
 	<meta name="msapplication-TileColor" content="#0b0b0b">
 	<meta name="msapplication-TileImage" content="/icon-192.png">
-	<meta name="msapplication-config" content="/browserconfig.xml">
-	
-	<!-- Share target hints -->
-	<meta name="web-share-target" content="true">
-	<meta name="share-target-action" content="/share-target">
-	
-	<!-- Open Graph for better sharing -->
-	<meta property="og:title" content="Share to MagicMirror²">
-	<meta property="og:description" content="Share YouTube videos directly to your MagicMirror² display">
-	<meta property="og:image" content="/icon-512.png">
-	<meta property="og:url" content="/">
-	<meta property="og:type" content="website">
-	<meta property="og:site_name" content="Share to MagicMirror²">
-	
-	<!-- Twitter Card -->
-	<meta name="twitter:card" content="summary">
-	<meta name="twitter:title" content="Share to MagicMirror²">
-	<meta name="twitter:description" content="Share YouTube videos directly to your MagicMirror² display">
-	<meta name="twitter:image" content="/icon-512.png">
 	<link rel="stylesheet" href="/styles.css">
 </head>
 <body>
+	<header class="appbar" role="banner">
+		<div class="appbar__left">
+			<img class="appbar__logo" src="/icon-64.png" alt="" />
+			<div class="appbar__titles">
+				<div class="appbar__title">Share to MagicMirror²</div>
+				<div class="appbar__subtitle">Cast & control YouTube from your phone</div>
+			</div>
+		</div>
+		<div class="appbar__actions">
+			<div class="theme-toggle" role="switch" aria-checked="false" aria-label="Toggle dark/light theme" tabindex="0">
+				<div class="theme-toggle-track">
+					<div class="theme-toggle-thumb">
+						<svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<circle cx="12" cy="12" r="5"/>
+							<path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+						</svg>
+						<svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+						</svg>
+					</div>
+				</div>
+			</div>
+		</div>
+	</header>
+
 	<div id="chromeBanner" class="chrome-banner" style="display: none;">
 		<div class="chrome-banner-content">
 			<div class="chrome-banner-icon">
@@ -63,31 +69,8 @@
 		</div>
 	</div>
 
-	<main class="card" role="main">
-		<header class="header">
-			<div class="header-top">
-				<h1>
-					<img src="/icon-64.png" alt="" role="presentation">
-					Share to MagicMirror²
-				</h1>
-				<div class="theme-toggle" role="switch" aria-checked="false" aria-label="Toggle dark/light theme" tabindex="0">
-					<div class="theme-toggle-track">
-						<div class="theme-toggle-thumb">
-							<svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-								<circle cx="12" cy="12" r="5"/>
-								<path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
-							</svg>
-							<svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-								<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-							</svg>
-						</div>
-					</div>
-				</div>
-			</div>
-			<p class="subtitle">Share YouTube videos directly to your MagicMirror² display. Install this app to add it to your device's share menu.</p>
-		</header>
-
-		<section class="form-section" aria-labelledby="playback-heading">
+	<main class="main" role="main">
+		<section class="card form-section" aria-labelledby="playback-heading">
 			<h2 id="playback-heading" class="sr-only">Video Playback Controls</h2>
 			
 			<div class="form-row">
@@ -105,13 +88,13 @@
 			</div>
 
 			<div class="button-group">
-				<button id="play" class="button-primary" type="button">
+				<button id="play" class="btn btn--primary" type="button">
 					<span class="button-text">Play</span>
 				</button>
-				<button id="stop" class="button-danger" type="button">
+				<button id="stop" class="btn btn--danger" type="button">
 					<span class="button-text">Stop</span>
 				</button>
-				<button id="install" type="button" disabled>
+				<button id="install" class="btn" type="button" disabled>
 					<span class="button-text">Install App</span>
 				</button>
 			</div>
@@ -156,16 +139,22 @@
 			<div class="video-controls" id="videoControls" style="display: none;">
 				<h3>Video Controls</h3>
 				<div class="skip-interval-controls">
-					<label for="skipInterval">Skip Interval</label>
-					<select id="skipInterval" aria-describedby="skip-help">
-						<option value="5">5 seconds</option>
-						<option value="10" selected>10 seconds</option>
-						<option value="15">15 seconds</option>
-						<option value="30">30 seconds</option>
-						<option value="60">1 minute</option>
-						<option value="120">2 minutes</option>
-						<option value="300">5 minutes</option>
-					</select>
+					<label for="skipSelect">Skip Interval</label>
+					<div class="mm-select" id="skipSelect" data-value="10" aria-describedby="skip-help">
+						<button class="mm-select__button" aria-haspopup="listbox" aria-expanded="false" type="button">
+							<span id="skipLabel">10 seconds</span>
+							<span class="chev">▾</span>
+						</button>
+						<ul class="mm-select__menu" role="listbox" tabindex="-1" aria-labelledby="skipLabel">
+							<li role="option" data-val="5">5 seconds</li>
+							<li role="option" data-val="10" aria-selected="true">10 seconds</li>
+							<li role="option" data-val="15">15 seconds</li>
+							<li role="option" data-val="30">30 seconds</li>
+							<li role="option" data-val="60">1 minute</li>
+							<li role="option" data-val="120">2 minutes</li>
+							<li role="option" data-val="300">5 minutes</li>
+						</ul>
+					</div>
 					<div id="skip-help" class="sr-only">Select the number of seconds to skip when using rewind/forward buttons</div>
 				</div>
 				<div class="control-buttons">
@@ -197,7 +186,7 @@
 			</div>
 		</section>
 
-		<section class="form-section" aria-labelledby="options-heading">
+		<section class="card form-section" aria-labelledby="options-heading">
 			<h2 id="options-heading" class="sr-only">Playback Options</h2>
 			
 			<div class="options-grid">
@@ -251,34 +240,34 @@
 					<div id="lock-help" class="sr-only">Prevent automatic quality changes during playback</div>
 				</div>
 			</div>
-		</section>
 
-		<section class="status-section">
-			<div class="status-indicator">
-				<div class="status-info">
-					<div class="status-dot" id="statusDot" aria-hidden="true"></div>
-					<span id="statusText">Checking connection...</span>
+			<div class="status-section">
+				<div class="status-indicator">
+					<div class="status-info">
+						<div class="status-dot" id="statusDot" aria-hidden="true"></div>
+						<span id="statusText">Checking connection...</span>
+					</div>
+					<button id="refreshStatus" type="button" class="refresh-button" title="Check for playing video">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+							<path d="M21 3v5h-5"/>
+							<path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+							<path d="M3 21v-5h5"/>
+						</svg>
+					</button>
 				</div>
-				<button id="refreshStatus" type="button" class="refresh-button" title="Check for playing video">
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
-						<path d="M21 3v5h-5"/>
-						<path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
-						<path d="M3 21v-5h5"/>
-					</svg>
-				</button>
 			</div>
+
+			<div class="separator" role="separator"></div>
+
+			<footer class="api-info">
+				<strong>API Endpoints:</strong><br>
+				<code>POST /api/play</code> - Play video<br>
+				<code>POST /api/stop</code> - Stop playback<br>
+				<code>POST /api/options</code> - Update settings<br>
+				<code>GET /api/status</code> - Get current status
+			</footer>
 		</section>
-
-		<div class="separator" role="separator"></div>
-
-		<footer class="api-info">
-			<strong>API Endpoints:</strong><br>
-			<code>POST /api/play</code> - Play video<br>
-			<code>POST /api/stop</code> - Stop playback<br>
-			<code>POST /api/options</code> - Update settings<br>
-			<code>GET /api/status</code> - Get current status
-		</footer>
 	</main>
 
 	<div id="toast" class="toast" role="alert" aria-live="polite"></div>

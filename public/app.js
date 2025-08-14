@@ -796,6 +796,29 @@ async function togglePause () {
 }
 
 /**
+ * Set overlay mode on MagicMirror
+ * @param {string} action - "fullscreen", "windowed", or "toggle"
+ */
+async function setOverlay (action) {
+	try {
+		const result = await apiRequest("/api/overlay", {
+			method: "POST",
+			body: JSON.stringify({ action })
+		});
+
+		if (result.ok) {
+			const actionText = action === "fullscreen" ? "Fullscreen" : 
+			                  action === "windowed" ? "Windowed" : "Toggled";
+			showToast(`${actionText} mode activated`, "success");
+		} else {
+			throw new Error(result.error || "Failed to set overlay mode");
+		}
+	} catch (error) {
+		showToast(`Error: ${error.message}`, "error");
+	}
+}
+
+/**
  *
  */
 async function saveOptions () {
@@ -1041,6 +1064,16 @@ function setupEventListeners () {
 	}
 	if (elements.forwardButton) {
 		elements.forwardButton.addEventListener("click", forwardVideo);
+	}
+
+	// Overlay control buttons
+	const mmFSOnButton = document.getElementById("mmFSOn");
+	const mmFSOffButton = document.getElementById("mmFSOff");
+	if (mmFSOnButton) {
+		mmFSOnButton.addEventListener("click", () => setOverlay("fullscreen"));
+	}
+	if (mmFSOffButton) {
+		mmFSOffButton.addEventListener("click", () => setOverlay("windowed"));
 	}
 
 	// Refresh status button

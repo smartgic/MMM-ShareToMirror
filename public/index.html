@@ -183,6 +183,24 @@
 						<span class="button-text" id="forwardText">+10s</span>
 					</button>
 				</div>
+				
+				<div class="overlay-controls">
+					<h4>Mirror Display Mode</h4>
+					<div class="control-buttons">
+						<button id="mmFSOn" class="button-control" type="button" title="Switch to fullscreen mode">
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+							</svg>
+							<span class="button-text">Fullscreen</span>
+						</button>
+						<button id="mmFSOff" class="button-control" type="button" title="Switch to windowed mode">
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/>
+							</svg>
+							<span class="button-text">Windowed</span>
+						</button>
+					</div>
+				</div>
 			</div>
 		</section>
 
@@ -264,6 +282,8 @@
 				<strong>API Endpoints:</strong><br>
 				<code>POST /api/play</code> - Play video<br>
 				<code>POST /api/stop</code> - Stop playback<br>
+				<code>POST /api/control</code> - Video controls<br>
+				<code>POST /api/overlay</code> - Display mode<br>
 				<code>POST /api/options</code> - Update settings<br>
 				<code>GET /api/status</code> - Get current status
 			</footer>

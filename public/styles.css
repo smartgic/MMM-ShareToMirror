@@ -628,6 +628,20 @@ body > * { transform: none !important; }
 	margin-bottom: 0;
 }
 
+.overlay-controls {
+	margin-top: 24px;
+	padding-top: 20px;
+	border-top: 1px solid var(--muted-1);
+}
+
+.overlay-controls h4 {
+	margin: 0 0 12px 0;
+	font-size: 16px;
+	font-weight: 600;
+	color: var(--text);
+	text-align: center;
+}
+
 .mm-select {
 	position: relative;
 	display: inline-block;
@@ -681,7 +695,7 @@ body > * { transform: none !important; }
 	right: 0;
 	z-index: 99999;
 	max-height: 240px;
-	overflow: auto;
+	overflow: hidden;
 	margin: 0;
 	padding: 6px;
 	list-style: none;
@@ -921,7 +935,18 @@ body > * { transform: none !important; }
 
 @media (max-width: 480px) {
 	.appbar__titles {
-		display: none;
+		/* Keep titles visible but make them more compact */
+		line-height: 1.0;
+	}
+	
+	.appbar__title {
+		font-size: 14px;
+		font-weight: 600;
+	}
+	
+	.appbar__subtitle {
+		font-size: 11px;
+		opacity: 0.6;
 	}
 	
 	.form-row {

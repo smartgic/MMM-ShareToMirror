@@ -64,15 +64,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // Safety fallback: if we detect header overlap, nudge once
 window.addEventListener('load', () => {
-	const hdr = document.querySelector('.appbar');
-	setTimeout(() => {
+	// Use requestAnimationFrame to ensure layout is complete
+	requestAnimationFrame(() => {
+		const hdr = document.querySelector('.appbar');
 		if (!hdr) return;
 		const r = hdr.getBoundingClientRect();
 		if (r.top < 2) {
-			// header is touching the absolute top → give a little extra room
-			document.documentElement.style.setProperty('--infobar-h', '56px');
+			// Use the actual appbar height from CSS custom property
+			const appbarHeight = getComputedStyle(document.documentElement)
+				.getPropertyValue('--appbar-h') || '56px';
+			document.documentElement.style.setProperty('--infobar-h', appbarHeight);
 		}
-	}, 150);
+	});
 });
 
 // Service Worker registration
@@ -1170,7 +1173,11 @@ function initializeCustomDropdown() {
 	});
 
 	// Close dropdown when clicking outside
-	document.addEventListener('click', close);
+	document.addEventListener('click', (e) => {
+		if (!root.contains(e.target)) {
+			close();
+		}
+	});
 
 	// Handle option selection
 	menu.addEventListener('click', (e) => {

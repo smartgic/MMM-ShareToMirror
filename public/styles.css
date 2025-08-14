@@ -25,10 +25,9 @@
   --btn-red:  #ff5a6b;
 }
 
-/* Light theme when explicitly set or system preference */
-[data-theme="light"],
-:root:not([data-theme]) {
-  @media (prefers-color-scheme: light) {
+/* Light theme when system preference (and no explicit theme set) */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
     --bg: #f6f7fb;
     --panel: #ffffff;
     --panel-2: #ffffff;

@@ -3,7 +3,7 @@
  * Provides caching, offline functionality, and share target handling
  */
 
-const CACHE_NAME = "stm-v1.6.5";
+const CACHE_NAME = "stm-v1.6.6";
 const STATIC_CACHE = [
 	"/",
 	"/index.html",
@@ -73,9 +73,9 @@ self.addEventListener("fetch", (event) => {
 					return fetchResponse;
 				});
 			})
-			.catch(() => {
+			).catch(() => {
 				// Offline fallback for HTML requests
-				if (request.headers.get("accept").includes("text/html")) {
+				if (request.headers.get("accept")?.includes("text/html")) {
 					return caches.match("/index.html");
 				}
 			})

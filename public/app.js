@@ -508,28 +508,31 @@ function updateVideoInfo (videoData) {
 
 /**
  * Fetch video information from YouTube API (via backend)
+ * Accepts server "fallback" JSON even on non-200 responses.
  * @param {string} videoId - YouTube video ID
  */
 async function fetchVideoInfo (videoId) {
 	if (!videoId) return null;
 
 	try {
-		const result = await apiRequest("/api/video-info", {
+		const res = await fetch("/api/video-info", {
 			method: "POST",
+			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ videoId })
 		});
-		if (result.ok && result.data) {
-			return result.data;
-		}
-		// Handle fallback data from server error response
-		if (!result.ok && result.fallback) {
-			return result.fallback;
-		}
+
+		const json = await res.json().catch(() => null);
+
+		// Normal success path
+		if (res.ok && json?.ok && json.data) return json.data;
+
+		// Helper returned an error but included a fallback object — use it
+		if (json?.fallback) return json.fallback;
 	} catch (error) {
 		console.warn("Failed to fetch video info:", error);
 	}
 
-	// Final fallback: create basic info from video ID
+	// Final client-side fallback
 	return {
 		title: "YouTube Video",
 		channel: "YouTube",

@@ -13,602 +13,766 @@ const path = require("path");
 const zlib = require("zlib");
 const NodeHelper = require("node_helper");
 const express = require("express");
+const bodyParser = require("body-parser");
 const multer = require("multer");
 
-/* -------------------- YouTube ID parse -------------------- */
+/**
+ * Parse YouTube video ID from URL or return direct ID
+ * Enhanced with better validation and error handling
+ * @param input
+ */
 function parseYouTubeId (input) {
-  if (!input || typeof input !== "string") return null;
-  const s = input.trim();
+	if (!input || typeof input !== "string") return null;
 
-  const patterns = [
-    /(?:youtube\.com\/watch\?v=)([a-zA-Z0-9_-]{11})/i,
-    /(?:youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/i,
-    /(?:youtube\.com\/v\/)([a-zA-Z0-9_-]{11})/i,
-    /(?:youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/i,
-    /(?:youtu\.be\/)([a-zA-Z0-9_-]{11})/i,
-    /^([a-zA-Z0-9_-]{11})$/i
-  ];
+	const sanitized = input.trim();
 
-  for (const re of patterns) {
-    const m = s.match(re);
-    if (m && m[1] && m[1].length === 11 && (/^[a-zA-Z0-9_-]+$/).test(m[1])) {
-      return m[1];
-    }
-  }
-  return null;
+	// Enhanced regex for YouTube URLs including more formats
+	const patterns = [
+		/(?:youtube\.com\/watch\?v=)([a-zA-Z0-9_-]{11})/i,
+		/(?:youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/i,
+		/(?:youtube\.com\/v\/)([a-zA-Z0-9_-]{11})/i,
+		/(?:youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/i,
+		/(?:youtu\.be\/)([a-zA-Z0-9_-]{11})/i,
+		/^([a-zA-Z0-9_-]{11})$/i // Direct video ID
+	];
+
+	for (const pattern of patterns) {
+		const match = sanitized.match(pattern);
+		if (match && match[1]) {
+			// Additional validation: ensure it's exactly 11 characters
+			const videoId = match[1];
+			if (videoId.length === 11 && (/^[a-zA-Z0-9_-]+$/).test(videoId)) {
+				return videoId;
+			}
+		}
+	}
+
+	return null;
 }
 
-/* -------------------- Rate limit -------------------- */
-function createRateLimit (windowMs = 60_000, max = 100) {
-  const requests = new Map();   // ip -> { count, resetTime }
-  let lastCleanup = 0;
+/**
+ * Simple rate limiter
+ * @param windowMs
+ * @param max
+ */
+function createRateLimit (windowMs = 60000, max = 100) {
+	const requests = new Map();
 
-  return (req, res, next) => {
-    const now = Date.now();
+	return (req, res, next) => {
+		const clientId = req.ip || req.connection.remoteAddress;
+		const now = Date.now();
 
-    // Do cleanup at most every 30s
-    if (now - lastCleanup > 30_000) {
-      for (const [ip, data] of requests.entries()) {
-        if (now - data.resetTime > windowMs) requests.delete(ip);
-      }
-      lastCleanup = now;
-    }
+		// Clean old entries
+		for (const [ip, data] of requests.entries()) {
+			if (now - data.resetTime > windowMs) {
+				requests.delete(ip);
+			}
+		}
 
-    // Express will honor X-Forwarded-For if trust proxy is enabled
-    const clientId = req.ip || req.connection?.remoteAddress || "unknown";
-    let rec = requests.get(clientId);
-    if (!rec || now - rec.resetTime > windowMs) {
-      rec = { count: 0, resetTime: now };
-      requests.set(clientId, rec);
-    }
+		// Check rate limit
+		let clientData = requests.get(clientId);
+		if (!clientData || now - clientData.resetTime > windowMs) {
+			clientData = { count: 0, resetTime: now };
+			requests.set(clientId, clientData);
+		}
 
-    if (rec.count >= max) {
-      return res.status(429).json({
-        ok: false,
-        error: "Too many requests",
-        retryAfter: Math.ceil((windowMs - (now - rec.resetTime)) / 1000)
-      });
-    }
+		if (clientData.count >= max) {
+			return res.status(429).json({
+				ok: false,
+				error: "Too many requests",
+				retryAfter: Math.ceil((windowMs - (now - clientData.resetTime)) / 1000)
+			});
+		}
 
-    rec.count++;
-    next();
-  };
-}
-
-/* -------------------- Helper -------------------- */
-function decodeIfCompressed(response) {
-  const enc = (response.headers["content-encoding"] || "").toLowerCase();
-  if (enc.includes("br")) return response.pipe(zlib.createBrotliDecompress());
-  if (enc.includes("gzip")) return response.pipe(zlib.createGunzip());
-  if (enc.includes("deflate")) return response.pipe(zlib.createInflate());
-  return response;
+		clientData.count++;
+		next();
+	};
 }
 
 module.exports = NodeHelper.create({
-  start () {
-    console.log("[MMM-ShareToMirror] Node helper starting…");
-    this.config = null;
-    this.server = null;
-    this.state = {
-      playing: false,
-      lastUrl: null,
-      lastVideoId: null,
-      caption: { enabled: false, lang: "en" },
-      quality: { target: "auto", floor: null, ceiling: null, lock: false }
-    };
-    this.setupErrorHandlers();
-  },
+	start () {
+		console.log("[MMM-ShareToMirror] Node helper starting...");
+		this.config = null;
+		this.server = null;
+		this.state = {
+			playing: false,
+			lastUrl: null,
+			lastVideoId: null,
+			caption: { enabled: false, lang: "en" },
+			quality: { target: "auto", floor: null, ceiling: null, lock: false }
+		};
 
-  setupErrorHandlers () {
-    process.on("uncaughtException", (err) => {
-      console.error("[MMM-ShareToMirror] Uncaught Exception:", err);
-    });
-    process.on("unhandledRejection", (reason, p) => {
-      console.error("[MMM-ShareToMirror] Unhandled Rejection at:", p, "reason:", reason);
-    });
-  },
+		// Setup process error handlers
+		this.setupErrorHandlers();
+	},
 
-  socketNotificationReceived (notification, payload) {
-    switch (notification) {
-      case "STM_START":
-        this.handleStart(payload);
-        break;
-      case "STM_EMBEDDED_STOPPED":
-        this.state.playing = false;
-        console.log(`[MMM-ShareToMirror] Playback stopped: ${payload?.reason || "unknown"}`);
-        break;
-    }
-  },
+	setupErrorHandlers () {
+		process.on("uncaughtException", (error) => {
+			console.error("[MMM-ShareToMirror] Uncaught Exception:", error);
+		});
 
-  handleStart (config) {
-    this.config = this.validateConfig(config);
-    if (config?.caption) Object.assign(this.state.caption, config.caption);
-    if (config?.quality) Object.assign(this.state.quality, config.quality);
-    this.startServer();
-  },
+		process.on("unhandledRejection", (reason, promise) => {
+			console.error("[MMM-ShareToMirror] Unhandled Rejection at:", promise, "reason:", reason);
+		});
+	},
 
-  validateConfig (config) {
-    const defaults = {
-      port: 8570,
-      https: { enabled: false, keyPath: "", certPath: "" },
-      caption: { enabled: false, lang: "en" },
-      quality: { target: "auto", floor: null, ceiling: null, lock: false }
-    };
+	socketNotificationReceived (notification, payload) {
+		switch (notification) {
+			case "STM_START":
+				this.handleStart(payload);
+				break;
+			case "STM_EMBEDDED_STOPPED":
+				this.state.playing = false;
+				console.log(`[MMM-ShareToMirror] Playback stopped: ${payload?.reason || "unknown"}`);
+				break;
+		}
+	},
 
-    if (!config || typeof config !== "object") return defaults;
+	handleStart (config) {
+		this.config = this.validateConfig(config);
 
-    // Port
-    if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535) {
-      console.warn("[MMM-ShareToMirror] Invalid port, using default 8570");
-      config.port = defaults.port;
-    }
+		// Update state with config
+		if (config.caption) Object.assign(this.state.caption, config.caption);
+		if (config.quality) Object.assign(this.state.quality, config.quality);
 
-    // HTTPS validity
-    if (config.https?.enabled && (!config.https.keyPath || !config.https.certPath)) {
-      console.warn("[MMM-ShareToMirror] HTTPS enabled but missing key/cert paths, disabling");
-      config.https.enabled = false;
-    }
+		this.startServer();
+	},
 
-    return config;
-  },
+	validateConfig (config) {
+		const defaults = {
+			port: 8570,
+			https: { enabled: false, keyPath: "", certPath: "" },
+			caption: { enabled: false, lang: "en" },
+			quality: { target: "auto", floor: null, ceiling: null, lock: false }
+		};
 
-  startServer () {
-    if (this.server) return;
+		if (!config || typeof config !== "object") return defaults;
 
-    const app = this.createApp();
-    const port = this.config.port;
+		// Validate port
+		if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535) {
+			console.warn("[MMM-ShareToMirror] Invalid port, using default 8570");
+			config.port = defaults.port;
+		}
 
-    try {
-      if (this.config.https?.enabled) {
-        this.server = this.createHttpsServer(app, port);
-        console.log(`[MMM-ShareToMirror] HTTPS server listening on port ${port}`);
-      } else {
-        this.server = this.createHttpServer(app, port);
-        console.log(`[MMM-ShareToMirror] HTTP server listening on port ${port}`);
-      }
+		// Validate HTTPS
+		if (config.https?.enabled && (!config.https.keyPath || !config.https.certPath)) {
+			console.warn("[MMM-ShareToMirror] HTTPS enabled but missing paths, disabling");
+			config.https.enabled = false;
+		}
 
-      this.server.on("error", (err) => {
-        console.error("[MMM-ShareToMirror] Server error:", err);
-      });
-    } catch (err) {
-      console.error("[MMM-ShareToMirror] Failed to start server:", err);
-    }
-  },
+		return config;
+	},
 
-  createApp () {
-    const app = express();
+	startServer () {
+		if (this.server) return;
 
-    // Basics
-    app.disable("x-powered-by");
-    app.set("trust proxy", true);
+		const app = this.createApp();
+		const port = this.config.port;
 
-    // Security & CSP
-    app.use((req, res, next) => {
-      res.setHeader("X-Content-Type-Options", "nosniff");
-      res.setHeader("X-Frame-Options", "DENY");
-      res.setHeader("X-XSS-Protection", "1; mode=block");
-      res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-      // Allow self + YouTube embeds; keep inline for our small static UI
-      res.setHeader(
-        "Content-Security-Policy",
-        [
-          "default-src 'self'",
-          "script-src 'self' 'unsafe-inline' https://www.youtube.com",
-          "frame-src https://www.youtube.com https://www.youtube-nocookie.com",
-          "img-src 'self' data: https:",
-          "style-src 'self' 'unsafe-inline'",
-          "connect-src 'self'",
-          "frame-ancestors 'self'"
-        ].join("; ")
-      );
+		try {
+			if (this.config.https?.enabled) {
+				this.server = this.createHttpsServer(app, port);
+			} else {
+				this.server = this.createHttpServer(app, port);
+			}
 
-      // CORS for API routes
-      if (req.path.startsWith("/api/") || req.path === "/share-target") {
-        res.setHeader("Access-Control-Allow-Origin", "*");
-        res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-        res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-        if (req.method === "OPTIONS") return res.status(204).end();
-      }
+			this.server.on("error", (error) => {
+				console.error("[MMM-ShareToMirror] Server error:", error);
+			});
+		} catch (error) {
+			console.error("[MMM-ShareToMirror] Failed to start server:", error);
+		}
+	},
 
-      next();
-    });
+	createApp () {
+		const app = express();
 
-    // Rate limit first
-    app.use(createRateLimit());
+		// Security and CORS middleware
+		app.use((req, res, next) => {
+			res.setHeader("X-Content-Type-Options", "nosniff");
+			res.setHeader("X-Frame-Options", "DENY");
+			res.setHeader("X-XSS-Protection", "1; mode=block");
+			res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+			res.setHeader("Content-Security-Policy",
+				"default-src 'self'; "
+				+ "script-src 'self' 'unsafe-inline' https://www.youtube.com; "
+				+ "frame-src https://www.youtube.com; "
+				+ "img-src 'self' data: https:; "
+				+ "style-src 'self' 'unsafe-inline'; "
+				+ "connect-src 'self'");
 
-    // Body parsers (Express built-ins)
-    app.use(express.json({ limit: "1mb" }));
-    app.use(express.urlencoded({ extended: true, limit: "1mb" }));
+			if (req.path.startsWith("/api/")) {
+				res.setHeader("Access-Control-Allow-Origin", "*");
+				res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+				res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+			}
+			next();
+		});
 
-    // Static files for the small UI / PWA (if present)
-    app.use(express.static(path.join(__dirname, "public"), {
-      extensions: ["html"],
-      maxAge: "1d",
-      index: ["index.html"]
-    }));
+		// Rate limiting and body parsing
+		app.use(createRateLimit());
+		app.use(bodyParser.json({ limit: "1mb" }));
+		app.use(bodyParser.urlencoded({ extended: true, limit: "1mb" }));
 
-    // Routes
-    this.setupRoutes(app);
+		// Static files
+		app.use(express.static(path.join(__dirname, "public"), {
+			extensions: ["html"],
+			maxAge: "1d"
+		}));
 
-    // Error handler
-    app.use((err, req, res, next) => {
-      console.error("[MMM-ShareToMirror] Request error:", err);
-      if (err?.type === "entity.too.large") {
-        return res.status(413).json({ ok: false, error: "Request too large" });
-      }
-      res.status(500).json({ ok: false, error: "Internal server error" });
-    });
+		// Routes
+		this.setupRoutes(app);
 
-    return app;
-  },
+		// Error handler
+		app.use((error, req, res, next) => {
+			console.error("[MMM-ShareToMirror] Request error:", error);
 
-  setupRoutes (app) {
-    const upload = multer({
-      storage: multer.memoryStorage(),
-      limits: { fileSize: 1 * 1024 * 1024, fields: 10 }
-    });
+			if (error.type === "entity.too.large") {
+				return res.status(413).json({ ok: false, error: "Request too large" });
+			}
+			if (error.type === "entity.parse.failed") {
+				return res.status(400).json({ ok: false, error: "Invalid JSON" });
+			}
 
-    // Share target (POST form-data or GET with query)
-    const handleShareTarget = (req, res) => {
-      const url = req.body?.url || req.body?.text || req.body?.title ||
-                  req.query?.url || req.query?.text || req.query?.title;
-      const videoId = parseYouTubeId(url);
-      if (videoId) this.playVideo(videoId, url);
+			res.status(500).json({ ok: false, error: "Internal server error" });
+		});
 
-      const donePage = path.join(__dirname, "public", "done.html");
-      if (fs.existsSync(donePage)) return res.sendFile(donePage);
-      // Minimal fallback if file missing
-      res.type("html").send("<!doctype html><meta charset='utf-8'><title>OK</title><p>Shared to MagicMirror².</p>");
-    };
+		return app;
+	},
 
-    app.post("/share-target", upload.none(), handleShareTarget);
-    app.get("/share-target", handleShareTarget);
+	setupRoutes (app) {
+		const upload = multer({ limits: { fileSize: 1024 * 1024, fields: 10 } });
 
-    // API
-    app.post("/api/play", (req, res) => {
-      const videoId = parseYouTubeId(req.body?.url);
-      if (!videoId) return res.status(400).json({ ok: false, error: "Invalid YouTube URL" });
+		// Share target - support both GET and POST
+		const handleShareTarget = (req, res) => {
+			const url = req.body?.url || req.body?.text || req.body?.title || 
+			           req.query?.url || req.query?.text || req.query?.title;
+			const videoId = parseYouTubeId(url);
 
-      this.playVideo(videoId, req.body.url);
-      res.json({ ok: true, mode: "embedded", videoId });
-    });
+			if (videoId) {
+				this.playVideo(videoId, url);
+			}
 
-    app.post("/api/stop", (req, res) => {
-      this.state.playing = false;
-      this.sendSocketNotification("STM_STOP_EMBED", { reason: "api" });
-      res.json({ ok: true, message: "Playback stopped" });
-    });
+			res.sendFile(path.join(__dirname, "public", "done.html"));
+		};
 
-    app.post("/api/control", (req, res) => {
-      const { action } = req.body || {};
-      let { seconds } = req.body || {};
-      if (!action) return res.status(400).json({ ok: false, error: "Action is required" });
+		app.post("/share-target", upload.none(), handleShareTarget);
+		app.get("/share-target", handleShareTarget);
 
-      const valid = new Set(["pause", "resume", "rewind", "forward"]);
-      if (!valid.has(action)) return res.status(400).json({ ok: false, error: "Invalid action" });
+		// API endpoints - using simple paths only
+		app.post("/api/play", (req, res) => {
+			const videoId = parseYouTubeId(req.body?.url);
 
-      if (action === "rewind" || action === "forward") {
-        seconds = Number(seconds) || 10; // default 10s if omitted/invalid
-        if (seconds <= 0) return res.status(400).json({ ok: false, error: "Seconds must be > 0" });
-      }
+			if (!videoId) {
+				return res.status(400).json({ ok: false, error: "Invalid YouTube URL" });
+			}
 
-      this.sendSocketNotification("STM_VIDEO_CONTROL", { action, seconds });
-      res.json({ ok: true, action, seconds: seconds ?? null });
-    });
+			this.playVideo(videoId, req.body.url);
+			res.json({ ok: true, mode: "embedded", videoId });
+		});
 
-    app.post("/api/options", (req, res) => {
-      const updates = {};
+		app.post("/api/stop", (req, res) => {
+			this.state.playing = false;
+			this.sendSocketNotification("STM_STOP_EMBED", { reason: "api" });
+			res.json({ ok: true, message: "Playback stopped" });
+		});
 
-      if (req.body?.caption && typeof req.body.caption === "object") {
-        updates.caption = {
-          enabled: Boolean(req.body.caption.enabled),
-          lang: req.body.caption.lang || "en"
-        };
-        Object.assign(this.state.caption, updates.caption);
-      }
+		app.post("/api/control", (req, res) => {
+			const { action, seconds } = req.body;
 
-      if (req.body?.quality && typeof req.body.quality === "object") {
-        updates.quality = {
-          target: req.body.quality.target || "auto",
-          floor: req.body.quality.floor || null,
-          ceiling: req.body.quality.ceiling || null,
-          lock: Boolean(req.body.quality.lock)
-        };
-        Object.assign(this.state.quality, updates.quality);
-      }
+			if (!action) {
+				return res.status(400).json({ ok: false, error: "Action is required" });
+			}
 
-      if (Object.keys(updates).length) {
-        this.sendSocketNotification("STM_OPTIONS", updates);
-      }
-      res.json({ ok: true, state: this.state, updated: Boolean(Object.keys(updates).length) });
-    });
+			const validActions = ["pause", "resume", "rewind", "forward"];
+			if (!validActions.includes(action)) {
+				return res.status(400).json({ ok: false, error: "Invalid action" });
+			}
 
-    app.post("/api/overlay", (req, res) => {
-      const { action = "toggle" } = req.body || {};
-      this.sendSocketNotification("STM_OVERLAY", { action });
-      res.json({ ok: true });
-    });
+			// For rewind/forward, validate seconds parameter
+			if ((action === "rewind" || action === "forward") && (!seconds || seconds <= 0)) {
+				return res.status(400).json({ ok: false, error: "Valid seconds parameter required for rewind/forward" });
+			}
 
-    app.get("/api/status", (req, res) => {
-      res.json({
-        ok: true,
-        state: this.state,
-        config: {
-          port: this.config.port,
-          httpsEnabled: !!this.config.https?.enabled
-        },
-        timestamp: new Date().toISOString()
-      });
-    });
+			this.sendSocketNotification("STM_VIDEO_CONTROL", { action, seconds });
+			res.json({ ok: true, action, seconds: seconds || null });
+		});
 
-    app.get("/api/health", (req, res) => {
-      res.json({ ok: true, status: "healthy", uptime: process.uptime(), timestamp: new Date().toISOString() });
-    });
-  },
+		app.post("/api/options", (req, res) => {
+			const updates = {};
 
-  /* -------------------- YouTube info helpers -------------------- */
-  async fetchYouTubeVideoInfo (videoId) {
-    const methods = [
-      () => this.fetchVideoInfoFromOEmbed(videoId),
-      () => this.fetchVideoInfoFromYouTubeAPI(videoId),
-      () => this.fetchVideoInfoFromScraping(videoId)
-    ];
+			if (req.body.caption && typeof req.body.caption === "object") {
+				updates.caption = {
+					enabled: Boolean(req.body.caption.enabled),
+					lang: req.body.caption.lang || "en"
+				};
+				Object.assign(this.state.caption, updates.caption);
+			}
 
-    for (const m of methods) {
-      try {
-        const r = await m();
-        if (r && r.title) return r;
-      } catch (e) {
-        console.warn("[MMM-ShareToMirror] Video info method failed:", e.message);
-      }
-    }
-    return this.createFallbackVideoInfo(videoId);
-  },
+			if (req.body.quality && typeof req.body.quality === "object") {
+				updates.quality = {
+					target: req.body.quality.target || "auto",
+					floor: req.body.quality.floor || null,
+					ceiling: req.body.quality.ceiling || null,
+					lock: Boolean(req.body.quality.lock)
+				};
+				Object.assign(this.state.quality, updates.quality);
+			}
 
-  async fetchVideoInfoFromOEmbed (videoId) {
-    const url = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
+			if (Object.keys(updates).length > 0) {
+				this.sendSocketNotification("STM_OPTIONS", updates);
+			}
 
-    return new Promise((resolve, reject) => {
-      const req = https.get(url, {
-        timeout: 3000,
-        headers: { "User-Agent": "Mozilla/5.0 (compatible; MMM-ShareToMirror/1.7.0)" }
-      }, (res) => {
-        if (res.statusCode !== 200) {
-          return reject(new Error(`oEmbed API returned status ${res.statusCode}`));
-        }
-        const stream = decodeIfCompressed(res);
-        let data = "";
-        stream.on("data", (c) => { data += c; });
-        stream.on("end", () => {
-          try {
-            const j = JSON.parse(data);
-            if (!j.title) return reject(new Error("No title in oEmbed response"));
-            resolve({
-              title: j.title,
-              channel: j.author_name || "YouTube",
-              thumbnail: j.thumbnail_url || `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
-              url: `https://www.youtube.com/watch?v=${videoId}`,
-              description: `Video by ${j.author_name || "YouTube"}`,
-              duration: null, views: null, likes: null, publishedAt: null,
-              category: null, tags: [], quality: "Auto", language: "en", captions: []
-            });
-          } catch (e) { reject(new Error(`Failed to parse oEmbed: ${e.message}`)); }
-        });
-      });
-      req.on("error", (e) => reject(new Error(`oEmbed request failed: ${e.message}`)));
-      req.setTimeout(3000, () => { req.destroy(new Error("oEmbed request timeout")); });
-    });
-  },
+			res.json({ ok: true, state: this.state, updated: Object.keys(updates).length > 0 });
+		});
 
-  async fetchVideoInfoFromYouTubeAPI (videoId) {
-    if (!this.config?.youtubeApiKey) throw new Error("YouTube API key not configured");
-    const url = `https://www.googleapis.com/youtube/v3/videos?id=${videoId}&key=${this.config.youtubeApiKey}&part=snippet,statistics,contentDetails`;
+		app.get("/api/status", (req, res) => {
+			res.json({
+				ok: true,
+				state: this.state,
+				config: {
+					port: this.config.port,
+					httpsEnabled: this.config.https?.enabled || false
+				},
+				timestamp: new Date().toISOString()
+			});
+		});
 
-    return new Promise((resolve, reject) => {
-      const req = https.get(url, { timeout: 5000 }, (res) => {
-        const stream = decodeIfCompressed(res);
-        let data = "";
-        stream.on("data", (c) => { data += c; });
-        stream.on("end", () => {
-          try {
-            const apiData = JSON.parse(data);
-            const item = apiData.items?.[0];
-            if (!item) return reject(new Error("No video data in API response"));
-            const sn = item.snippet, st = item.statistics, cd = item.contentDetails;
-            resolve({
-              title: sn.title,
-              channel: sn.channelTitle || "YouTube",
-              thumbnail: sn.thumbnails?.medium?.url || `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
-              url: `https://www.youtube.com/watch?v=${videoId}`,
-              description: sn.description || "",
-              duration: this.parseISO8601Duration(cd.duration),
-              views: parseInt(st.viewCount) || null,
-              likes: parseInt(st.likeCount) || null,
-              publishedAt: sn.publishedAt,
-              category: sn.categoryId,
-              tags: sn.tags || [],
-              quality: "Auto",
-              language: sn.defaultLanguage || sn.defaultAudioLanguage || "en",
-              captions: cd.caption === "true" ? ["en"] : []
-            });
-          } catch (e) { reject(new Error(`Failed to parse API response: ${e.message}`)); }
-        });
-      });
-      req.on("error", (e) => reject(new Error(`API request failed: ${e.message}`)));
-      req.setTimeout(5000, () => { req.destroy(new Error("API request timeout")); });
-    });
-  },
+		app.post("/api/video-info", async (req, res) => {
+			const { videoId } = req.body;
 
-  async fetchVideoInfoFromScraping (videoId) {
-    const url = `https://www.youtube.com/watch?v=${videoId}`;
+			// Validate video ID format
+			if (!videoId || !(/^[a-zA-Z0-9_-]{11}$/).test(videoId)) {
+				return res.status(400).json({ ok: false, error: "Invalid video ID format" });
+			}
 
-    return new Promise((resolve, reject) => {
-      const req = https.get(url, {
-        timeout: 8000,
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "en-US,en;q=0.5",
-          "Accept-Encoding": "gzip, deflate, br",
-          "DNT": "1",
-          "Connection": "keep-alive",
-          "Upgrade-Insecure-Requests": "1"
-        }
-      }, (res) => {
-        if (res.statusCode !== 200) return reject(new Error(`YouTube page status ${res.statusCode}`));
+			try {
+				const videoInfo = await this.fetchYouTubeVideoInfo(videoId);
+				res.json({ ok: true, data: videoInfo });
+			} catch (error) {
+				console.error("[MMM-ShareToMirror] Failed to fetch video info:", error);
+				res.status(500).json({
+					ok: false,
+					error: "Failed to fetch video information",
+					fallback: this.createFallbackVideoInfo(videoId)
+				});
+			}
+		});
 
-        const stream = decodeIfCompressed(res);
-        let data = "";
-        const maxSize = 2 * 1024 * 1024; // 2MB limit
-        let received = 0;
+		// Toggle the on-mirror overlay size: fullscreen | windowed | toggle
+		app.post("/api/overlay", (req, res) => {
+			const { action = "toggle" } = req.body || {};
+			this.sendSocketNotification("STM_OVERLAY", { action });
+			res.json({ ok: true });
+		});
 
-        const finish = () => {
-          try {
-            const m = data.match(/var ytInitialPlayerResponse = ({.+?});/);
-            if (m) {
-              const player = JSON.parse(m[1]);
-              const vd = player.videoDetails;
-              if (vd) {
-                const sec = parseInt(vd.lengthSeconds) || null;
-                const formatDuration = (s) => {
-                  if (!s && s !== 0) return null;
-                  const h = Math.floor(s / 3600);
-                  const m = Math.floor((s % 3600) / 60);
-                  const ss = s % 60;
-                  return h > 0 ? `${h}:${String(m).padStart(2,"0")}:${String(ss).padStart(2,"0")}`
-                               : `${m}:${String(ss).padStart(2,"0")}`;
-                };
-                resolve({
-                  title: vd.title,
-                  channel: vd.author || "YouTube",
-                  thumbnail: vd.thumbnail?.thumbnails?.[2]?.url || vd.thumbnail?.thumbnails?.[0]?.url || `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
-                  url: `https://www.youtube.com/watch?v=${videoId}`,
-                  description: vd.shortDescription || "",
-                  duration: sec,
-                  durationFormatted: formatDuration(sec),
-                  views: parseInt(vd.viewCount) || null,
-                  viewsFormatted: null, // keep simple
-                  likes: null,
-                  publishedAt: null,
-                  category: null,
-                  tags: vd.keywords || [],
-                  quality: "Auto",
-                  language: "en",
-                  captions: []
-                });
-                return;
-              }
-            }
-            const t = data.match(/<title>(.+?) - YouTube<\/title>/);
-            if (t) {
-              resolve({
-                title: t[1],
-                channel: "YouTube",
-                thumbnail: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
-                url: `https://www.youtube.com/watch?v=${videoId}`,
-                description: "",
-                duration: null,
-                durationFormatted: null,
-                views: null,
-                viewsFormatted: null,
-                likes: null,
-                publishedAt: null,
-                category: null,
-                tags: [],
-                quality: "Auto",
-                language: "en",
-                captions: []
-              });
-            } else {
-              reject(new Error("Could not extract video info"));
-            }
-          } catch (e) { reject(new Error(`Failed to parse scraped data: ${e.message}`)); }
-        };
+		app.get("/api/health", (req, res) => {
+			res.json({
+				ok: true,
+				status: "healthy",
+				uptime: process.uptime(),
+				timestamp: new Date().toISOString()
+			});
+		});
+	},
 
-        stream.on("data", (chunk) => {
-          received += chunk.length;
-          if (received > maxSize) {
-            req.destroy();
-            return reject(new Error("Response too large"));
-          }
-          data += chunk;
-          if (data.includes("var ytInitialPlayerResponse = {") && data.includes("};")) {
-            // Early exit if we already got what we need
-            req.destroy();
-            finish();
-          }
-        });
+	/**
+	 * Fetch YouTube video information using multiple methods
+	 * @param {string} videoId - YouTube video ID
+	 * @returns {Promise<object>} Video information object
+	 */
+	async fetchYouTubeVideoInfo (videoId) {
+		// Try multiple methods to get video info
+		const methods = [
+			() => this.fetchVideoInfoFromOEmbed(videoId),
+			() => this.fetchVideoInfoFromYouTubeAPI(videoId),
+			() => this.fetchVideoInfoFromScraping(videoId)
+		];
 
-        stream.on("end", finish);
-      });
+		for (const method of methods) {
+			try {
+				const result = await method();
+				if (result && result.title) {
+					return result;
+				}
+			} catch (error) {
+				console.warn("[MMM-ShareToMirror] Video info method failed:", error.message);
+			}
+		}
 
-      req.on("error", (e) => reject(new Error(`Scraping failed: ${e.message}`)));
-      req.setTimeout(8000, () => { req.destroy(new Error("Scraping request timeout")); });
-    });
-  },
+		// Final fallback
+		return this.createFallbackVideoInfo(videoId);
+	},
 
-  createFallbackVideoInfo (videoId) {
-    return {
-      title: "YouTube Video",
-      channel: "YouTube",
-      thumbnail: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
-      url: `https://www.youtube.com/watch?v=${videoId}`,
-      description: "Video information could not be loaded",
-      duration: null,
-      views: null,
-      likes: null,
-      publishedAt: null,
-      category: null,
-      tags: [],
-      quality: "Auto",
-      language: "en",
-      captions: []
-    };
-  },
+	/**
+	 * Fetch video info using YouTube oEmbed API (most reliable)
+	 * @param {string} videoId - YouTube video ID
+	 */
+	async fetchVideoInfoFromOEmbed (videoId) {
+		const url = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
 
-  parseISO8601Duration (iso) {
-    if (!iso) return null;
-    const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
-    if (!m) return null;
-    const h = parseInt(m[1]) || 0;
-    const min = parseInt(m[2]) || 0;
-    const s = parseInt(m[3]) || 0;
-    return h * 3600 + min * 60 + s;
-  },
+		return new Promise((resolve, reject) => {
+			const request = https.get(url, { 
+				timeout: 6000, // bumped from 3000 -> 6000
+				headers: {
+					"User-Agent": "Mozilla/5.0 (compatible; MMM-ShareToMirror/1.6.1)"
+				}
+			}, (response) => {
+				let data = "";
 
-  playVideo (videoId, url) {
-    this.state.playing = true;
-    this.state.lastUrl = url || null;
-    this.state.lastVideoId = videoId;
-    this.sendSocketNotification("STM_PLAY_EMBED", { videoId, url });
-    console.log(`[MMM-ShareToMirror] Playing video: ${videoId}`);
-  },
+				// Handle non-200 status codes
+				if (response.statusCode !== 200) {
+					reject(new Error(`oEmbed API returned status ${response.statusCode}`));
+					return;
+				}
 
-  createHttpServer (app, port) {
-    const server = http.createServer(app);
-    server.listen(port, "0.0.0.0");
-    return server;
-  },
+				response.on("data", (chunk) => {
+					data += chunk;
+				});
 
-  createHttpsServer (app, port) {
-    try {
-      const key = fs.readFileSync(this.config.https.keyPath);
-      const cert = fs.readFileSync(this.config.https.certPath);
-      const server = https.createServer({ key, cert }, app);
-      server.listen(port, "0.0.0.0");
-      return server;
-    } catch (e) {
-      console.error("[MMM-ShareToMirror] HTTPS setup failed:", e.message);
-      console.log("[MMM-ShareToMirror] Falling back to HTTP");
-      return this.createHttpServer(app, port);
-    }
-  },
+				response.on("end", () => {
+					try {
+						const oembedData = JSON.parse(data);
 
-  stop () {
-    console.log("[MMM-ShareToMirror] Node helper stopping…");
-    if (this.server) {
-      this.server.close(() => console.log("[MMM-ShareToMirror] Server closed"));
-      this.server = null;
-    }
-  }
+						if (oembedData.title) {
+							resolve({
+								title: oembedData.title,
+								channel: oembedData.author_name || "YouTube",
+								thumbnail: oembedData.thumbnail_url || `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+								url: `https://www.youtube.com/watch?v=${videoId}`,
+								description: `Video by ${oembedData.author_name || "YouTube"}`,
+								duration: null, // oEmbed doesn't provide duration
+								views: null,
+								likes: null,
+								publishedAt: null,
+								category: null,
+								tags: [],
+								quality: "Auto",
+								language: "en",
+								captions: []
+							});
+						} else {
+							reject(new Error("No title in oEmbed response"));
+						}
+					} catch (error) {
+						reject(new Error(`Failed to parse oEmbed response: ${error.message}`));
+					}
+				});
+			});
+
+			request.on("error", (error) => {
+				reject(new Error(`oEmbed request failed: ${error.message}`));
+			});
+
+			request.on("timeout", () => {
+				request.destroy();
+				reject(new Error("oEmbed request timeout"));
+			});
+
+			// Explicit timeout guard
+			request.setTimeout(6000, () => {
+				request.destroy();
+				reject(new Error("oEmbed request timeout"));
+			});
+		});
+	},
+
+	/**
+	 * Fetch video info using YouTube Data API v3 (requires API key)
+	 * @param {string} videoId - YouTube video ID
+	 */
+	async fetchVideoInfoFromYouTubeAPI (videoId) {
+		// This would require a YouTube API key from config
+		// For now, we'll skip this method unless API key is configured
+		if (!this.config?.youtubeApiKey) {
+			throw new Error("YouTube API key not configured");
+		}
+
+		const url = `https://www.googleapis.com/youtube/v3/videos?id=${videoId}&key=${this.config.youtubeApiKey}&part=snippet,statistics,contentDetails`;
+
+		return new Promise((resolve, reject) => {
+			const request = https.get(url, { timeout: 5000 }, (response) => {
+				let data = "";
+
+				response.on("data", (chunk) => {
+					data += chunk;
+				});
+
+				response.on("end", () => {
+					try {
+						const apiData = JSON.parse(data);
+
+						if (apiData.items && apiData.items.length > 0) {
+							const video = apiData.items[0];
+							const snippet = video.snippet;
+							const statistics = video.statistics;
+							const contentDetails = video.contentDetails;
+
+							resolve({
+								title: snippet.title,
+								channel: snippet.channelTitle || "YouTube",
+								thumbnail: snippet.thumbnails?.medium?.url || `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+								url: `https://www.youtube.com/watch?v=${videoId}`,
+								description: snippet.description || "",
+								duration: this.parseISO8601Duration(contentDetails.duration),
+								views: parseInt(statistics.viewCount) || null,
+								likes: parseInt(statistics.likeCount) || null,
+								publishedAt: snippet.publishedAt,
+								category: snippet.categoryId,
+								tags: snippet.tags || [],
+								quality: "Auto",
+								language: snippet.defaultLanguage || snippet.defaultAudioLanguage || "en",
+								captions: contentDetails.caption === "true" ? ["en"] : []
+							});
+						} else {
+							reject(new Error("No video data in API response"));
+						}
+					} catch (error) {
+						reject(new Error(`Failed to parse API response: ${error.message}`));
+					}
+				});
+			});
+
+			request.on("error", (error) => {
+				reject(new Error(`API request failed: ${error.message}`));
+			});
+
+			request.on("timeout", () => {
+				request.destroy();
+				reject(new Error("API request timeout"));
+			});
+		});
+	},
+
+	/**
+	 * Fetch video info by scraping YouTube page (fallback method)
+	 * — Robust to Brotli/gzip/deflate and looser response formats
+	 * @param {string} videoId - YouTube video ID
+	 */
+	async fetchVideoInfoFromScraping (videoId) {
+		const url = `https://www.youtube.com/watch?v=${videoId}`;
+
+		return new Promise((resolve, reject) => {
+			const request = https.get(url, {
+				timeout: 9000,
+				headers: {
+					// Intentionally omit Accept-Encoding; if compression is sent anyway, we handle it below.
+					"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+					"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+					"Accept-Language": "en-US,en;q=0.9",
+					"Connection": "keep-alive",
+					"Referer": "https://www.youtube.com/"
+				}
+			}, (response) => {
+				if (response.statusCode !== 200) {
+					reject(new Error(`YouTube page returned status ${response.statusCode}`));
+					return;
+				}
+
+				// Decompress if needed
+				const enc = String(response.headers["content-encoding"] || "").toLowerCase();
+				let stream = response;
+				try {
+					if (enc.includes("br")) stream = response.pipe(zlib.createBrotliDecompress());
+					else if (enc.includes("gzip")) stream = response.pipe(zlib.createGunzip());
+					else if (enc.includes("deflate")) stream = response.pipe(zlib.createInflate());
+				} catch {
+					stream = response; // fall back to raw stream if decompressor fails
+				}
+				stream.setEncoding("utf8");
+
+				const maxSize = 2 * 1024 * 1024; // 2MB decoded limit
+				let data = "";
+				let aborted = false;
+
+				const bail = (err) => {
+					if (!aborted) {
+						aborted = true;
+						try { request.destroy(); } catch {}
+						reject(err);
+					}
+				};
+
+				stream.on("data", (chunk) => {
+					data += chunk;
+					if (data.length > maxSize) bail(new Error("Response too large"));
+				});
+
+				stream.on("end", () => {
+					if (aborted) return;
+					try {
+						const html = data;
+
+						// Works with "var ytInitialPlayerResponse =" or without var
+						const match = html.match(/ytInitialPlayerResponse\s*=\s*({[\s\S]+?})\s*;/);
+						if (match) {
+							const playerData = JSON.parse(match[1]);
+							const videoDetails = playerData?.videoDetails;
+
+							if (videoDetails) {
+								const secs = parseInt(videoDetails.lengthSeconds) || null;
+
+								const formatDuration = (seconds) => {
+									if (!seconds) return null;
+									const hrs = Math.floor(seconds / 3600);
+									const mins = Math.floor((seconds % 3600) / 60);
+									const sc = seconds % 60;
+									return hrs > 0
+										? `${hrs}:${mins.toString().padStart(2, "0")}:${sc.toString().padStart(2, "0")}`
+										: `${mins}:${sc.toString().padStart(2, "0")}`;
+								};
+
+								const formatViews = (views) => {
+									const num = parseInt(views || 0);
+									if (!num) return null;
+									if (num >= 1e9) return `${(num / 1e9).toFixed(1)}B views`;
+									if (num >= 1e6) return `${(num / 1e6).toFixed(1)}M views`;
+									if (num >= 1e3) return `${(num / 1e3).toFixed(1)}K views`;
+									return `${num} views`;
+								};
+
+								return resolve({
+									title: videoDetails.title,
+									channel: videoDetails.author || "YouTube",
+									thumbnail: videoDetails.thumbnail?.thumbnails?.[2]?.url
+										|| videoDetails.thumbnail?.thumbnails?.[0]?.url
+										|| `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+									url: `https://www.youtube.com/watch?v=${videoId}`,
+									description: videoDetails.shortDescription || "",
+									duration: secs,
+									durationFormatted: formatDuration(secs),
+									views: parseInt(videoDetails.viewCount) || null,
+									viewsFormatted: formatViews(videoDetails.viewCount),
+									likes: null,
+									publishedAt: null,
+									category: null,
+									tags: videoDetails.keywords || [],
+									quality: "Auto",
+									language: "en",
+									captions: []
+								});
+							}
+						}
+
+						// Fallback: try og:title
+						const titleMeta = html.match(/<meta[^>]+property="og:title"[^>]+content="([^"]+)"/i)
+							|| html.match(/<meta[^>]+itemprop="name"[^>]+content="([^"]+)"/i);
+						if (titleMeta) {
+							return resolve({
+								title: titleMeta[1],
+								channel: "YouTube",
+								thumbnail: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+								url: `https://www.youtube.com/watch?v=${videoId}`,
+								description: "",
+								duration: null,
+								durationFormatted: null,
+								views: null,
+								viewsFormatted: null,
+								likes: null,
+								publishedAt: null,
+								category: null,
+								tags: [],
+								quality: "Auto",
+								language: "en",
+								captions: []
+							});
+						}
+
+						// Last resort
+						reject(new Error("Could not extract video information from page"));
+					} catch (err) {
+						reject(new Error(`Failed to parse scraped data: ${err.message}`));
+					}
+				});
+
+				stream.on("error", (e) => bail(new Error(`Scrape stream error: ${e.message}`)));
+			});
+
+			request.on("error", (error) => reject(new Error(`Scraping request failed: ${error.message}`)));
+			request.on("timeout", () => { request.destroy(); reject(new Error("Scraping request timeout")); });
+		});
+	},
+
+	/**
+	 * Create fallback video info when all methods fail
+	 * @param {string} videoId - YouTube video ID
+	 */
+	createFallbackVideoInfo (videoId) {
+		return {
+			title: "YouTube Video",
+			channel: "YouTube",
+			thumbnail: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+			url: `https://www.youtube.com/watch?v=${videoId}`,
+			description: "Video information could not be loaded",
+			duration: null,
+			views: null,
+			likes: null,
+			publishedAt: null,
+			category: null,
+			tags: [],
+			quality: "Auto",
+			language: "en",
+			captions: []
+		};
+	},
+
+	/**
+	 * Parse ISO 8601 duration format (PT4M13S) to seconds
+	 * @param {string} duration - ISO 8601 duration string
+	 */
+	parseISO8601Duration (duration) {
+		if (!duration) return null;
+
+		const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+		if (!match) return null;
+
+		const hours = parseInt(match[1]) || 0;
+		const minutes = parseInt(match[2]) || 0;
+		const seconds = parseInt(match[3]) || 0;
+
+		return hours * 3600 + minutes * 60 + seconds;
+	},
+
+	playVideo (videoId, url) {
+		this.state.playing = true;
+		this.state.lastUrl = url;
+		this.state.lastVideoId = videoId;
+
+		this.sendSocketNotification("STM_PLAY_EMBED", { videoId, url });
+		console.log(`[MMM-ShareToMirror] Playing video: ${videoId}`);
+	},
+
+	createHttpServer (app, port) {
+		const server = http.createServer(app);
+		server.listen(port, "0.0.0.0", () => {
+			console.log(`[MMM-ShareToMirror] HTTP server listening on port ${port}`);
+		});
+		return server;
+	},
+
+	createHttpsServer (app, port) {
+		try {
+			const key = fs.readFileSync(this.config.https.keyPath);
+			const cert = fs.readFileSync(this.config.https.certPath);
+			const server = https.createServer({ key, cert }, app);
+
+			server.listen(port, "0.0.0.0", () => {
+				console.log(`[MMM-ShareToMirror] HTTPS server listening on port ${port}`);
+			});
+
+			return server;
+		} catch (error) {
+			console.error("[MMM-ShareToMirror] HTTPS setup failed:", error.message);
+			console.log("[MMM-ShareToMirror] Falling back to HTTP");
+			return this.createHttpServer(app, port);
+		}
+	},
+
+	stop () {
+		console.log("[MMM-ShareToMirror] Node helper stopping...");
+		if (this.server) {
+			this.server.close(() => console.log("[MMM-ShareToMirror] Server closed"));
+			this.server = null;
+		}
+	}
 });

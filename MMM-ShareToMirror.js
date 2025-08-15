@@ -6,7 +6,7 @@
  * Optional integration to pause MMM-MagicMover while playing.
  * @author Smart'Gic
  * @license MIT
- * @version 1.7.4
+ * @version 1.7.0
  */
 Module.register("MMM-ShareToMirror", {
   defaults: {
